@@ -1,21 +1,44 @@
-import os
-from telegram.ext import Updater, CommandHandler
+import logging
+from telegram import Update
+from telegram.ext import Application, CommandHandler, ContextTypes
+import requests
+import random
 
-TELEGRAM_TOKEN = "PUT_YOUR_TOKEN_HERE"
+TELEGRAM_TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
 
-def start(update, context):
-    update.message.reply_text("Привіт! Напиши /scan щоб отримати сигнали.")
+logging.basicConfig(level=logging.INFO)
 
-def scan(update, context):
-    update.message.reply_text("Поки що тестовий сигнал ❤️ BUY EUR/USD 5 хв.")
+# --- Команда /start ---
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text("Бот працює! Надішли /signal щоб отримати сигнал 📈")
 
+# --- Генерація тестового сигналу ---
+async def signal(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    pairs = ["EUR/USD", "GBP/USD", "USD/JPY", "AUD/USD", "EUR/JPY"]
+
+    pair = random.choice(pairs)
+    direction = random.choice(["BUY", "SELL"])
+    payout = random.randint(85, 95)
+    strength = random.randint(70, 99)
+
+    text = f"""
+📌 Пара: {pair}
+🔔 Сигнал: {direction}
+💰 Виплата: {payout}%
+🔥 Потужність: {strength}%
+⏱ Експірація: 3 хв
+"""
+
+    await update.message.reply_text(text)
+
+# --- Головний запуск ---
 def main():
-    updater = Updater(TELEGRAM_TOKEN, use_context=True)
-    dp = updater.dispatcher
-    dp.add_handler(CommandHandler("start", start))
-    dp.add_handler(CommandHandler("scan", scan))
-    updater.start_polling()
-    updater.idle()
+    app = Application.builder().token(TELEGRAM_TOKEN).build()
+
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("signal", signal))
+
+    app.run_polling()
 
 if __name__ == "__main__":
     main()
