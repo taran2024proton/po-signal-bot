@@ -11,7 +11,7 @@ from telegram.ext import Application, CommandHandler, ContextTypes
 import asyncio
 
 # ----------------- Налаштування -----------------
-TELEGRAM_TOKEN = "ТУТ_ТВІЙ_ТОКЕН"   # <- встав свій токен
+TELEGRAM_TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"   # <- встав свій токен
 ASSETS_FILE = "assets.json"          # список пар (без payout)
 MIN_STRENGTH = 86                    # початковий поріг (підлаштувати через бектест)
 EXPIRY_MIN = 3                       # інформаційна експірація
