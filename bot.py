@@ -3,17 +3,16 @@ import asyncio
 import logging
 import yfinance as yf
 import pandas as pd
-from telegram import Bot
 from aiohttp import web
+from telegram import Bot
 
-# --- ENVIRONMENT VARIABLES (ТУТ НЕ МІНЯЄМО) ---
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 logging.basicConfig(level=logging.INFO)
 
+# --- SIMPLE INDICATORS WITHOUT TALIB --- #
 
-# --- SIMPLE INDICATORS ---
 def rsi(prices, period=14):
     delta = prices.diff()
 
@@ -31,7 +30,8 @@ def moving_average(prices, period=20):
     return prices.rolling(period).mean()
 
 
-# --- SIGNAL CHECKER ---
+# --- MARKET SIGNAL LOGIC --- #
+
 async def check_signal():
     pairs = {
         "EURUSD=X": "EUR/USD",
@@ -50,9 +50,9 @@ async def check_signal():
 
         close = data["Close"]
 
-        rsi_val = rsi(close).iloc[-1]
-        ma20 = moving_average(close).iloc[-1]
-        price = close.iloc[-1]
+        rsi_val = float(rsi(close).iloc[-1])
+        ma20 = float(moving_average(close).iloc[-1])
+        price = float(close.iloc[-1])
 
         direction = None
 
@@ -65,8 +65,8 @@ async def check_signal():
             text = (
                 f"📌 {name}\n"
                 f"🔔 Сигнал: {direction}\n"
-                f"💹 RSI: {round(rsi_val, 2)}\n"
-                f"📈 MA20: {round(ma20, 5)}\n"
+                f"💹 RSI: {round(rsi_val,2)}\n"
+                f"📈 MA20: {round(ma20,5)}\n"
                 f"💰 Ціна: {price}\n"
                 f"🕒 Таймфрейм: 5 хв"
             )
@@ -74,31 +74,30 @@ async def check_signal():
             await bot.send_message(chat_id=CHAT_ID, text=text)
 
 
-# --- LOOP THAT CHECKS SIGNALS EVERY 60 SEC ---
 async def signal_loop():
     while True:
         await check_signal()
         await asyncio.sleep(60)
 
 
-# --- WEB SERVER TO KEEP RENDER ALIVE ---
-async def handle(request):
-    return web.Response(text="Bot is running OK")
+# --- SMALL WEB SERVER FOR RENDER --- #
 
-async def start_web_server():
+async def handle(request):
+    return web.Response(text="Bot is running!")
+
+def start_server():
     app = web.Application()
     app.router.add_get("/", handle)
-    runner = web.AppRunner(app)
-    await runner.setup()
-
-    site = web.TCPSite(runner, "0.0.0.0", int(os.getenv("PORT", 10000)))
-    await site.start()
+    port = int(os.getenv("PORT", 10000))
+    web.run_app(app, port=port)
 
 
-# --- MAIN ---
+# --- RUN BOTH SERVER AND BOT --- #
+
 async def main():
-    await start_web_server()   # запускає веб-сервер
-    await signal_loop()        # запускає сигнали
+    asyncio.create_task(signal_loop())
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, start_server)
 
 
 if __name__ == "__main__":
