@@ -6,9 +6,8 @@ import pandas as pd
 from telegram import Bot
 from telegram.ext import Application, CommandHandler
 
-TELEGRAM_TOKEN = os.getenv("8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs")
-CHAT_ID = os.getenv("477570593")
-
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+CHAT_ID = os.getenv("CHAT_ID")
 logging.basicConfig(level=logging.INFO)
 
 # --- SIMPLE INDICATORS WITHOUT TALIB --- #
