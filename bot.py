@@ -1,98 +1,71 @@
-import os
-import asyncio
 import logging
 import yfinance as yf
 import pandas as pd
-from telegram import Bot
-from flask import Flask
+from telegram.ext import Updater, CommandHandler
 
-TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
-CHAT_ID = os.getenv("CHAT_ID")
+# =============== LOGGING ===============
+logging.basicConfig(
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    level=logging.INFO
+)
 
-logging.basicConfig(level=logging.INFO)
-
-# --- INDICATORS --- #
-
-def rsi(prices, period=14):
-    delta = prices.diff()
-    gain = delta.where(delta > 0, 0)
-    loss = -delta.where(delta < 0, 0)
+# =============== ANALYTICS ===============
+def rsi(series, period=14):
+    delta = series.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
 
-def moving_average(prices, period=20):
-    return prices.rolling(period).mean()
+def moving_average(series, window=20):
+    return series.rolling(window).mean()
 
-# --- SIGNAL LOGIC --- #
+# =============== BOT LOGIC ===============
+def start(update, context):
+    update.message.reply_text(
+        "Привіт! Введи тикер, наприклад:\n\n/btc\n/tsla\n/aapl"
+    )
 
-async def check_signal():
-    pairs = {
-        "EURUSD=X": "EUR/USD",
-        "GBPUSD=X": "GBP/USD",
-        "USDJPY=X": "USD/JPY",
-        "AUDUSD=X": "AUD/USD",
-    }
+def analyze_ticker(update, context):
+    ticker = update.message.text.replace("/", "").upper()
+    update.message.reply_text(f"🔍 Аналізую {ticker}...")
 
-    bot = Bot(token=TELEGRAM_TOKEN)
+    data = yf.download(ticker, period="3mo", interval="1d")
 
-    for ticker, name in pairs.items():
-        data = yf.download(ticker, interval="5m", period="2d")
+    if data.empty:
+        update.message.reply_text("❌ Не вдалося знайти такі дані.")
+        return
 
-        if len(data) < 50:
-            continue
+    close = data["Close"]
 
-        close = data["Close"]
+    rsi_val = rsi(close).iloc[-1]
+    ma20 = moving_average(close).iloc[-1]
+    price = close.iloc[-1]
 
-        rsi_val = float(rsi(close).iloc[-1])
-        ma20 = float(moving_average(close).iloc[-1])
-        price = float(close.iloc[-1])
+    update.message.reply_text(
+        f"📊 *{ticker}*\n"
+        f"Ціна: {price:.2f}\n"
+        f"RSI: {rsi_val:.2f}\n"
+        f"MA20: {ma20:.2f}",
+        parse_mode="Markdown"
+    )
 
-        direction = None
+# =============== MAIN ===============
+def main():
+    TOKEN = "ТУТ_ТВІЙ_TOKEN"
+    updater = Updater(TOKEN, use_context=True)
+    dp = updater.dispatcher
 
-        if rsi_val < 30 and price > ma20:
-            direction = "BUY (купити)"
-        elif rsi_val > 70 and price < ma20:
-            direction = "SELL (продати)"
+    dp.add_handler(CommandHandler("start", start))
+    dp.add_handler(CommandHandler("btc", analyze_ticker))
+    dp.add_handler(CommandHandler("tsla", analyze_ticker))
+    dp.add_handler(CommandHandler("aapl", analyze_ticker))
 
-        if direction:
-            text = (
-                f"📌 {name}\n"
-                f"🔔 Сигнал: {direction}\n"
-                f"💹 RSI: {round(rsi_val,2)}\n"
-                f"📈 MA20: {round(ma20,5)}\n"
-                f"💰 Ціна: {price}\n"
-                f"🕒 Таймфрейм: 5 хв"
-            )
-            await bot.send_message(chat_id=CHAT_ID, text=text)
-
-async def signal_loop():
-    while True:
-        await check_signal()
-        await asyncio.sleep(60)
-
-# --- SIMPLE FLASK SERVER FOR RENDER --- #
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Bot is running!"
-
-def start_server():
-    port = int(os.getenv("PORT", 10000))
-    app.run(host="0.0.0.0", port=port)
-
-# --- MAIN --- #
-
-async def main():
-    # запускаємо бота окремим асинхронним процесом
-    asyncio.create_task(signal_loop())
-
-    # запускаємо Flask у паралельному потоці
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, start_server)
+    # endless bot polling (works on Render)
+    updater.start_polling()
+    updater.idle()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    main()
