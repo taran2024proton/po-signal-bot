@@ -3,34 +3,29 @@ import asyncio
 import logging
 import yfinance as yf
 import pandas as pd
-from aiohttp import web
 from telegram import Bot
+from flask import Flask
 
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
 
 logging.basicConfig(level=logging.INFO)
 
-# --- SIMPLE INDICATORS WITHOUT TALIB --- #
+# --- INDICATORS --- #
 
 def rsi(prices, period=14):
     delta = prices.diff()
-
     gain = delta.where(delta > 0, 0)
     loss = -delta.where(delta < 0, 0)
-
     avg_gain = gain.rolling(period).mean()
     avg_loss = loss.rolling(period).mean()
-
     rs = avg_gain / avg_loss
     return 100 - (100 / (1 + rs))
-
 
 def moving_average(prices, period=20):
     return prices.rolling(period).mean()
 
-
-# --- MARKET SIGNAL LOGIC --- #
+# --- SIGNAL LOGIC --- #
 
 async def check_signal():
     pairs = {
@@ -70,35 +65,34 @@ async def check_signal():
                 f"💰 Ціна: {price}\n"
                 f"🕒 Таймфрейм: 5 хв"
             )
-
             await bot.send_message(chat_id=CHAT_ID, text=text)
-
 
 async def signal_loop():
     while True:
         await check_signal()
         await asyncio.sleep(60)
 
+# --- SIMPLE FLASK SERVER FOR RENDER --- #
 
-# --- SMALL WEB SERVER FOR RENDER --- #
+app = Flask(__name__)
 
-async def handle(request):
-    return web.Response(text="Bot is running!")
+@app.route("/")
+def home():
+    return "Bot is running!"
 
 def start_server():
-    app = web.Application()
-    app.router.add_get("/", handle)
     port = int(os.getenv("PORT", 10000))
-    web.run_app(app, port=port)
+    app.run(host="0.0.0.0", port=port)
 
-
-# --- RUN BOTH SERVER AND BOT --- #
+# --- MAIN --- #
 
 async def main():
+    # запускаємо бота окремим асинхронним процесом
     asyncio.create_task(signal_loop())
+
+    # запускаємо Flask у паралельному потоці
     loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, start_server)
-
 
 if __name__ == "__main__":
     asyncio.run(main())
