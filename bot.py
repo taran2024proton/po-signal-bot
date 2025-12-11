@@ -159,7 +159,7 @@ def analyze_symbol(symbol):
             return None
         last_close = float(close5.iloc[-1])
 
-        if pd.isna(ema200.iloc[-1]):
+        if pd.isna(ema200.iloc[-1].item()):
             return None
 
         trend = "BUY" if ema50.iloc[-1] > ema200.iloc[-1] else "SELL"
