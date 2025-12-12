@@ -10,7 +10,7 @@ from flask import Flask, request
 
 # ========== CONFIG ==========
 TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
-WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com"
+WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com/webhook"
 ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
 CACHE_SECONDS = 90
