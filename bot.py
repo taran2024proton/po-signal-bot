@@ -5,7 +5,7 @@
 import json
 import time
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 import yfinance as yf
 import pandas as pd
 import telebot
@@ -52,14 +52,14 @@ def cache_get(key):
         return None
     try:
         ts = datetime.fromisoformat(cache[key]["_ts"])
-        if datetime.utcnow() - ts > timedelta(seconds=CACHE_SECONDS):
+        if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
             return None
         return cache[key]["data"]
     except:
         return None
 
 def cache_set(key, data):
-    cache[key] = {"_ts": datetime.utcnow().isoformat(), "data": data}
+    cache[key] = {"_ts": datetime.now(UTC).isoformat(), "data": data}
     save_cache(cache)
 
 # ---------------- INDICATORS ----------------
@@ -117,7 +117,7 @@ def fetch_ohlcv(symbol, interval):
             pass
 
     try:
-        df = yf.download(symbol, period="3d", interval=interval, progress=False)
+        df = yf.download(symbol, period="3d", interval=interval, progress=False, auto_adjust=True)
         if df is None or df.empty:
             return None
         js = df.reset_index().to_json(date_format="iso")
@@ -192,12 +192,16 @@ def set_mode(msg):
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan(msg):
+    print(f"DEBUG: Command signal received for chat {msg.chat.id}, mode {MODE}.")
+    
     bot.send_message(msg.chat.id, f"🔍 Scanning ({MODE})...")
 
     assets = ensure_assets()
     use_15m = THRESHOLDS[MODE]["USE_15M"]
 
     valid = [a for a in assets if a["payout"] >= PAYOUT_MIN][:MAX_ASSETS_PER_SCAN]
+    print(f"DEBUG: Found {len(valid)} assets to scan.")
+    
     if not valid:
         bot.send_message(msg.chat.id, "No assets with high payout.")
         return
@@ -212,13 +216,17 @@ def scan(msg):
             results.append(cached)
             continue
 
+        print(f"DEBUG: Analyzing {a['symbol']}...")
+
         res = analyze(a["symbol"], use_15m)
         if res:
+            print(f"DEBUG: Signal found for {a['symbol']} (Strength: {res['strength']})")
             res["display"] = a["display"]
             res["payout"] = a["payout"]
             results.append(res)
             cache_set(key, res)
         else:
+            print(f"DEBUG: No strong signal for {a['symbol']}, skipping.")
             cache_set(key, None)
 
         time.sleep(1)
@@ -226,6 +234,7 @@ def scan(msg):
     if not results:
         bot.send_message(msg.chat.id, "❌ No strong signals right now.")
         return
+        print(f"DEBUG: {len(results)} signals found in total. Sending message.")
 
     results = sorted(results, key=lambda x: (x["strength"], x["payout"]), reverse=True)
 
@@ -254,6 +263,7 @@ def help_cmd(msg):
 def webhook():
     try:
         data = request.get_json(force=True)   # FIX: always parse JSON
+        print(f"DEBUG: Received webhook update.")
         update = telebot.types.Update.de_json(json.dumps(data))
         bot.process_new_updates([update])
     except Exception as e:
