@@ -8,7 +8,7 @@ import pandas as pd
 import telebot
 
 # ========== Налаштування ==========
-TOKEN = "PUT_YOUR_TELEGRAM_TOKEN_HERE"   # <- встав свій токен
+TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"   # <- встав свій токен
 ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
 CACHE_SECONDS = 90           # кеш, щоб зменшити запити
