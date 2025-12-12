@@ -118,39 +118,108 @@ def fetch_ohlcv(symbol, interval):
         return None
 
 # ---------- analysis (strict filters) ----------
-def analyze_one(symbol, use_15m_confirm=True):
-    df5 = fetch_ohlcv(symbol, '5m')
-    if df5 is None or len(df5) < 60:
+def analyze_one(symbol_data):
+    df5 = symbol_data.copy()
+    df5 = df5.tail(300).reset_index(drop=True)
+
+    if df5.empty:
         return None
 
-    close5 = df5['Close']
-    ema50_5 = ema(close5, 50)
-    ema200_5 = ema(close5, 200)
-    last_atr = float(atr(df5, 14).iloc[-1]) if not np.isnan(atr(df5,14).iloc[-1]) else 0.0
+    # ========== SAFE ATR ==========
+    atr_series = atr(df5, 14)
+    if (
+        atr_series is None or 
+        not isinstance(atr_series, pd.Series) or 
+        atr_series.dropna().empty
+    ):
+        return None
+    last_atr = float(atr_series.iloc[-1])
 
-    # spike filter: велика свічка за останні 6 барів
-    recent = df5[-6:]
-    spike = False
-    for i in range(len(recent)):
-        rng = float(recent['High'].iloc[i] - recent['Low'].iloc[i])
-        if rng > max(last_atr * 3.5, float(close5.iloc[-1]) * 0.006):
-            spike = True
-            break
-    if spike:
+    if last_atr == 0 or pd.isna(last_atr):
         return None
 
-    if np.isnan(ema200_5.iloc[-1]):
+    # ========== SAFE EMA ==========
+    ema50 = ema(df5, 50)
+    ema200 = ema(df5, 200)
+
+    if ema50 is None or ema200 is None:
         return None
 
-    if ema50_5.iloc[-1] > ema200_5.iloc[-1]:
-        trend5 = "BUY"
-    elif ema50_5.iloc[-1] < ema200_5.iloc[-1]:
-        trend5 = "SELL"
-    else:
-        trend5 = "NEUTRAL"
-
-    if trend5 == "NEUTRAL":
+    try:
+        last_ema50 = float(ema50.iloc[-1].item())
+        last_ema200 = float(ema200.iloc[-1].item())
+    except:
         return None
+
+    # ========== SAFE RSI ==========
+    rsi5 = rsi(df5, 5)
+    if rsi5 is None or rsi5.dropna().empty:
+        return None
+
+    try:
+        last_rsi = float(rsi5.iloc[-1].item())
+    except:
+        return None
+
+    # ========== SAFE MACD ==========
+    macd5 = macd(df5)
+    if macd5 is None or macd5.dropna().empty:
+        return None
+
+    try:
+        last_macd = float(macd5.iloc[-1].item())
+    except:
+        return None
+
+    # ========== SAFE PRICE ==========
+    try:
+        last_price = float(df5["close"].iloc[-1])
+    except:
+        return None
+
+    # ========== SIGNAL LOGIC ==========
+    buy_score = 0
+    sell_score = 0
+
+    # EMA cross
+    if last_ema50 > last_ema200:
+        buy_score += 1
+    if last_ema50 < last_ema200:
+        sell_score += 1
+
+    # RSI
+    if last_rsi < 30:
+        buy_score += 1
+    if last_rsi > 70:
+        sell_score += 1
+
+    # MACD
+    if last_macd > 0:
+        buy_score += 1
+    if last_macd < 0:
+        sell_score += 1
+
+    # Volatility filter (ATR)
+    if last_atr < last_price * 0.001:
+        return None  # too low volatility
+
+    # ======= FINAL SIGNAL =======
+    if buy_score >= 2 and buy_score > sell_score:
+        return {
+            "signal": "BUY",
+            "power": int((buy_score / 3) * 100),
+            "price": last_price
+        }
+
+    if sell_score >= 2 and sell_score > buy_score:
+        return {
+            "signal": "SELL",
+            "power": int((sell_score / 3) * 100),
+            "price": last_price
+        }
+
+    return None
+
 
     # indicators
     last_rsi = float(rsi(close5,14).iloc[-1])
