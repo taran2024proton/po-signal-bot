@@ -1,94 +1,143 @@
 import telebot
 import yfinance as yf
+import pandas as pd
 import numpy as np
+from datetime import datetime
 import time
 
-TOKEN = "8517986396:AAGCDudeHdGvs14rb9VsfHrakvjyOrTr_3c"
+TOKEN = "ВСТАВ СВІЙ ТЕЛЕГРАМ ТОКЕН ТУТ"
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- ІНДИКАТОРИ ---
+# --- індикатори ---
+def ema(series, period):
+    return series.ewm(span=period, adjust=False).mean()
 
-def rsi(close, period=14):
-    delta = np.diff(close)
-    up = delta.clip(min=0)
-    down = -1 * delta.clip(max=0)
-    ma_up = np.convolve(up, np.ones(period)/period, mode='valid')
-    ma_down = np.convolve(down, np.ones(period)/period, mode='valid')
+def rsi(series, period=14):
+    delta = series.diff()
+    up = delta.clip(lower=0)
+    down = -1 * delta.clip(upper=0)
+    ma_up = up.rolling(period).mean()
+    ma_down = down.rolling(period).mean()
     rs = ma_up / ma_down
     return 100 - (100 / (1 + rs))
 
-def ma(close, period=20):
-    return np.convolve(close, np.ones(period)/period, mode='valid')
+def macd(series, fast=12, slow=26, signal=9):
+    ema_fast = series.ewm(span=fast).mean()
+    ema_slow = series.ewm(span=slow).mean()
+    macd_line = ema_fast - ema_slow
+    macd_signal = macd_line.ewm(span=signal).mean()
+    return macd_line - macd_signal
 
-# --- АНАЛІЗ ПАРИ ---
+# --- список активів з payout >= 85% ---
+ASSETS = {
+    "EURUSD=X": {"name": "EUR/USD", "payout": 0.90},
+    "GBPUSD=X": {"name": "GBP/USD", "payout": 0.88},
+    "USDJPY=X": {"name": "USD/JPY", "payout": 0.86},
+    "BTC-USD": {"name": "BTC/USD", "payout": 0.92},
+    "ETH-USD": {"name": "ETH/USD", "payout": 0.91}
+}
 
-def analyze_pair(symbol):
-    data = yf.download(symbol, period="1d", interval="5m")
-    if len(data) < 30:
+def analyze(symbol):
+    try:
+        df = yf.download(symbol, period="2d", interval="5m", progress=False)
+
+        if df is None or df.empty:
+            return None
+
+        close = df["Close"]
+
+        ema20 = ema(close, 20)
+        ema50 = ema(close, 50)
+        rsi14 = rsi(close, 14)
+        macd_hist = macd(close)
+
+        last = close.iloc[-1]
+        last_ema20 = ema20.iloc[-1]
+        last_ema50 = ema50.iloc[-1]
+        last_rsi = rsi14.iloc[-1]
+        last_macd = macd_hist.iloc[-1]
+
+        score = 0
+        reasons = []
+
+        # Тренд
+        if last_ema20 > last_ema50:
+            trend = "BUY"
+        else:
+            trend = "SELL"
+
+        # Підтвердження 1: RSI
+        if trend == "BUY" and last_rsi < 60:
+            score += 1
+            reasons.append("RSI")
+        if trend == "SELL" and last_rsi > 40:
+            score += 1
+            reasons.append("RSI")
+
+        # Підтвердження 2: MACD
+        if trend == "BUY" and last_macd > 0:
+            score += 1
+            reasons.append("MACD")
+        if trend == "SELL" and last_macd < 0:
+            score += 1
+            reasons.append("MACD")
+
+        # Підтвердження 3: EMA кут
+        if abs(last_ema20 - last_ema50) > 0:
+            score += 1
+            reasons.append("EMA")
+
+        if score >= 3:
+            return {
+                "symbol": symbol,
+                "trend": trend,
+                "price": round(float(last), 6),
+                "score": score,
+                "reasons": ", ".join(reasons)
+            }
+        return None
+    except:
         return None
 
-    close = data["Close"].values
-
-    rsi_val = rsi(close)[-1]
-    ma20 = ma(close, 20)[-1]
-    last_price = close[-1]
-
-    # Рівні підтримки/опору
-    support = np.min(close[-20:])
-    resistance = np.max(close[-20:])
-
-    signal = None
-
-    if rsi_val < 30 and last_price <= support:
-        signal = "BUY"
-    if rsi_val > 70 and last_price >= resistance:
-        signal = "SELL"
-
-    return {
-        "symbol": symbol,
-        "rsi": round(rsi_val, 2),
-        "ma20": round(ma20, 5),
-        "support": round(support, 5),
-        "resistance": round(resistance, 5),
-        "signal": signal
-    }
-
-# Список пар (такі ж як на Pocket Option)
-pairs = [
-    "EURUSD=X", "GBPJPY=X", "AUDUSD=X", "USDJPY=X",
-    "EURJPY=X", "NZDUSD=X", "GBPUSD=X", "USDCAD=X",
-    "EURGBP=X", "AUDJPY=X"
-]
-
-# --- КОМАНДА /signal ---
-
 @bot.message_handler(commands=["signal"])
-def send_signal(message):
-    bot.reply_to(message, "🔍 Аналізую ринок... зачекай 3–5 секунд...")
+def signal(message):
+    bot.send_message(message.chat.id, "🔍 Аналізую ринок з payout ≥ 85%...\nЗачекай 3–5 секунд 🔎")
 
-    best = None
+    results = []
 
-    for p in pairs:
-        res = analyze_pair(p)
-        if res and res["signal"]:
-            best = res
-            break
+    for symbol in ASSETS:
+        payout = ASSETS[symbol]["payout"]
 
-    if not best:
-        bot.send_message(message.chat.id, "❌ Немає сильного сигналу зараз. Спробуй ще раз.")
+        if payout < 0.85:
+            continue
+
+        r = analyze(symbol)
+        if r:
+            r["name"] = ASSETS[symbol]["name"]
+            r["payout"] = payout
+            results.append(r)
+
+        time.sleep(1)
+
+    if not results:
+        bot.send_message(message.chat.id, "❌ Сильних сигналів немає.\nСпробуй пізніше.")
         return
 
-    text = f"""
-📌 **Пара:** {best['symbol']}
-📊 **Сигнал:** {best['signal']}
-📈 **RSI:** {best['rsi']}
-📉 **MA20:** {best['ma20']}
-🛑 **Підтримка:** {best['support']}
-🟩 **Опір:** {best['resistance']}
-⏳ **Експірація:** 5 хвилин
-    """
+    results = sorted(results, key=lambda x: x["score"], reverse=True)
 
-    bot.send_message(message.chat.id, text, parse_mode="Markdown")
+    msg = ""
+    for r in results:
+        msg += (
+            f"📌 {r['name']}\n"
+            f"🔔 СИГНАЛ: {r['trend']}\n"
+            f"💰 Виплата: {int(r['payout']*100)}%\n"
+            f"💵 Ціна: {r['price']}\n"
+            f"⭐ Потужність сигналу: {r['score']}/3\n"
+            f"📈 Підтвердження: {r['reasons']}\n"
+            f"⏱ Expiry: 5 хв\n\n"
+        )
 
-bot.polling()
+    bot.send_message(message.chat.id, msg)
+
+bot.polling(none_stop=True)
