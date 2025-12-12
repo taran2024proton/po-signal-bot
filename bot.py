@@ -152,7 +152,8 @@ def analyze_symbol(symbol):
         trend = "BUY" if ema50_last > ema200_last else "SELL"
 
         atr = (df["High"] - df["Low"]).rolling(14).mean()
-        if pd.isna(atr.iloc[-1]):
+        # Переконайтеся, що останнє значення існує
+        if atr.empty or pd.isna(atr.iloc[-1]):
             return None
         last_atr = float(atr.iloc[-1])
 
