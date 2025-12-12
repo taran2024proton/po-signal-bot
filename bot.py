@@ -193,7 +193,6 @@ def set_mode(msg):
 @bot.message_handler(commands=["signal", "scan"])
 def scan(msg):
     print(f"DEBUG: Command signal received for chat {msg.chat.id}, mode {MODE}.")
-    
     bot.send_message(msg.chat.id, f"🔍 Scanning ({MODE})...")
 
     assets = ensure_assets()
