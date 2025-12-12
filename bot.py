@@ -1,4 +1,4 @@
-# main.py — Тестер/Симулятор сигналів (жорсткі фільтри, expiry info=3min)
+# main.py — Fixed version for Render webhook only (NO polling)
 import json, time
 from pathlib import Path
 from datetime import datetime, timedelta
@@ -6,46 +6,43 @@ import yfinance as yf
 import numpy as np
 import pandas as pd
 import telebot
+from flask import Flask, request
 
-# ========== Налаштування ==========
-TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"   # <- встав свій токен
+# ========== CONFIG ==========
+TOKEN = "<YOUR_TOKEN_HERE>"  # replace with your token
+WEBHOOK_URL = "<YOUR_RENDER_WEBHOOK_URL>"  # e.g. https://your-app.onrender.com/webhook
 ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
-CACHE_SECONDS = 90           # кеш, щоб зменшити запити
-MAX_ASSETS_PER_SCAN = 6      # скільки активів сканувати за виклик
-PAYOUT_MIN = 0.85            # враховуємо лише активи з payout>=85% (в assets.json)
-EXPIRY_MIN = 3               # інформативна експірація
-MODE = "conservative"        # conservative (жорстко) або aggressive
+CACHE_SECONDS = 90
+MAX_ASSETS_PER_SCAN = 6
+PAYOUT_MIN = 0.85
+EXPIRY_MIN = 3
+MODE = "conservative"
 THRESHOLDS = {
     "conservative": {"MIN_STRENGTH": 80, "USE_15M": True},
-    "aggressive":   {"MIN_STRENGTH": 70, "USE_15M": False}
+    "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False}
 }
 # ==================================
 
 bot = telebot.TeleBot(TOKEN)
+app = Flask(__name__)
 
 # ---------- cache ----------
 def load_cache():
     p = Path(CACHE_FILE)
-    if not p.exists():
-        return {}
-    try:
-        return json.loads(p.read_text(encoding='utf-8'))
-    except:
-        return {}
+    if not p.exists(): return {}
+    try: return json.loads(p.read_text(encoding='utf-8'))
+    except: return {}
 
 def save_cache(cache):
-    try:
-        Path(CACHE_FILE).write_text(json.dumps(cache), encoding='utf-8')
-    except:
-        pass
+    try: Path(CACHE_FILE).write_text(json.dumps(cache), encoding='utf-8')
+    except: pass
 
 cache = load_cache()
 
 def cache_get(key):
     obj = cache.get(key)
-    if not obj:
-        return None
+    if not obj: return None
     ts = datetime.fromisoformat(obj.get("_ts"))
     if datetime.utcnow() - ts > timedelta(seconds=CACHE_SECONDS):
         return None
@@ -60,33 +57,31 @@ def ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
 
 def rsi(series, period=14):
-    delta = series.diff()
-    up = delta.clip(lower=0)
-    down = -1 * delta.clip(upper=0)
+    d = series.diff(); up = d.clip(lower=0); dn = -1 * d.clip(upper=0)
     ma_up = up.rolling(period).mean()
-    ma_down = down.rolling(period).mean()
-    rs = ma_up / ma_down
+    ma_dn = dn.rolling(period).mean()
+    rs = ma_up / ma_dn
     return 100 - (100 / (1 + rs))
 
 def macd_hist(series, fast=12, slow=26, signal=9):
-    ema_fast = series.ewm(span=fast, adjust=False).mean()
-    ema_slow = series.ewm(span=slow, adjust=False).mean()
-    macd_line = ema_fast - ema_slow
-    macd_signal = macd_line.ewm(span=signal, adjust=False).mean()
-    return macd_line - macd_signal
+    ef = series.ewm(span=fast, adjust=False).mean()
+    es = series.ewm(span=slow, adjust=False).mean()
+    line = ef - es
+    sig = line.ewm(span=signal, adjust=False).mean()
+    return line - sig
 
 def atr(df, period=14):
-    high_low = df['High'] - df['Low']
-    high_close = (df['High'] - df['Close'].shift()).abs()
-    low_close = (df['Low'] - df['Close'].shift()).abs()
-    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    hl = df['High'] - df['Low']
+    hc = (df['High'] - df['Close'].shift()).abs()
+    lc = (df['Low'] - df['Close'].shift()).abs()
+    tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-# ---------- assets loader ----------
+# ---------- assets ----------
 def ensure_assets():
     p = Path(ASSETS_FILE)
     if not p.exists():
-        example = [
+        ex = [
             {"symbol":"EURUSD=X","display":"EUR/USD","payout":0.90},
             {"symbol":"GBPUSD=X","display":"GBP/USD","payout":0.88},
             {"symbol":"USDJPY=X","display":"USD/JPY","payout":0.86},
@@ -94,209 +89,163 @@ def ensure_assets():
             {"symbol":"ETH-USD","display":"ETH/USD","payout":0.91},
             {"symbol":"AUDUSD=X","display":"AUD/USD","payout":0.87}
         ]
-        p.write_text(json.dumps(example, ensure_ascii=False, indent=2))
+        p.write_text(json.dumps(ex, ensure_ascii=False, indent=2))
     return json.loads(p.read_text(encoding='utf-8'))
 
-# ---------- data fetch with cache ----------
+# ---------- fetch with cache ----------
 def fetch_ohlcv(symbol, interval):
     key = f"{symbol}_{interval}"
     c = cache_get(key)
     if c is not None:
-        try:
-            return pd.read_json(c).set_index("Datetime")
-        except:
-            pass
+        try: return pd.read_json(c).set_index("Datetime")
+        except: pass
     try:
         df = yf.download(symbol, period="3d", interval=interval, progress=False)
-        if df is None or df.empty:
-            return None
-        df2 = df.reset_index()
-        cache_set(key, df2.to_json(date_format='iso'))
-        df = df.reset_index().set_index("Datetime")
-        return df
+        if df is None or df.empty: return None
+        js = df.reset_index().to_json(date_format='iso')
+        cache_set(key, js)
+        return df.reset_index().set_index("Datetime")
     except:
         return None
 
-# ---------- analysis (strict filters) ----------
-def analyze_one(symbol, use_15m_confirm):
+# ---------- analysis ----------
+def analyze_one(symbol, use_15m):
     df5 = fetch_ohlcv(symbol, "5m")
-    if df5 is None or df5.empty or len(df5) < 60:
-        return None
-
+    if df5 is None or df5.empty or len(df5) < 60: return None
     df5 = df5.tail(300).copy()
 
-    # ATR
     atr_series = atr(df5)
-    if atr_series is None or atr_series.dropna().empty:
-        return None
+    if atr_series.dropna().empty: return None
     last_atr = atr_series.iloc[-1]
-    if pd.isna(last_atr) or last_atr == 0:
-        return None
+    if pd.isna(last_atr) or last_atr == 0: return None
 
-    # EMA
     ema50 = ema(df5["Close"], 50)
     ema200 = ema(df5["Close"], 200)
+    if ema50.dropna().empty or ema200.dropna().empty: return None
 
-    if ema50.dropna().empty or ema200.dropna().empty:
-        return None
+    trend5 = "BUY" if ema50.iloc[-1] > ema200.iloc[-1] else "SELL"
 
-    last_ema50 = ema50.iloc[-1]
-    last_ema200 = ema200.iloc[-1]
-
-    trend5 = "BUY" if last_ema50 > last_ema200 else "SELL"
-
-    # RSI
     rsi5 = rsi(df5["Close"], 5)
-    if rsi5.dropna().empty:
-        return None
+    if rsi5.dropna().empty: return None
     last_rsi = rsi5.iloc[-1]
 
-    # MACD
     macd5 = macd_hist(df5["Close"])
-    if macd5.dropna().empty:
-        return None
+    if macd5.dropna().empty: return None
     last_macd = macd5.iloc[-1]
 
-    # Price
     last_price = df5["Close"].iloc[-1]
 
-    # Support / Resistance
     support = df5["Low"].tail(60).min()
-    resistance = df5["High"].tail(60).max()
+    resist = df5["High"].tail(60).max()
 
-    near_support = abs(last_price - support) <= max(last_atr * 1.2, last_price * 0.0015)
-    near_resist = abs(last_price - resistance) <= max(last_atr * 1.2, last_price * 0.0015)
+    near_s = abs(last_price - support) <= max(last_atr * 1.2, last_price * 0.0015)
+    near_r = abs(last_price - resist) <= max(last_atr * 1.2, last_price * 0.0015)
 
-    # Scoring
-    score = 0
-    reasons = []
+    score = 20
 
-    # Trend
-    score += 20
-    reasons.append("Trend")
+    if trend5 == "BUY" and last_rsi < 55: score += 20
+    if trend5 == "SELL" and last_rsi > 45: score += 20
 
-    # RSI
-    if trend5 == "BUY" and last_rsi < 55:
-        score += 20; reasons.append(f"RSI{int(last_rsi)}")
-    if trend5 == "SELL" and last_rsi > 45:
-        score += 20; reasons.append(f"RSI{int(last_rsi)}")
+    if trend5 == "BUY" and last_macd > 0: score += 20
+    if trend5 == "SELL" and last_macd < 0: score += 20
 
-    # MACD
-    if trend5 == "BUY" and last_macd > 0:
-        score += 20; reasons.append("MACD+")
-    if trend5 == "SELL" and last_macd < 0:
-        score += 20; reasons.append("MACD-")
+    if trend5 == "BUY" and near_s: score += 20
+    if trend5 == "SELL" and near_r: score += 20
 
-    # Support / Resistance
-    if trend5 == "BUY" and near_support:
-        score += 20; reasons.append("NearS")
-    if trend5 == "SELL" and near_resist:
-        score += 20; reasons.append("NearR")
-
-    # Volatility
-    if last_atr >= last_price * 0.00018:
-        score += 20; reasons.append("VolOK")
-    else:
-        return None
+    if not (last_atr >= last_price * 0.00018): return None
 
     strength = min(100, score)
 
-    # 15m confirm
-    if use_15m_confirm:
+    if use_15m:
         df15 = fetch_ohlcv(symbol, "15m")
-        if df15 is None or df15.empty or len(df15) < 60:
-            return None
+        if df15 is None or df15.empty or len(df15) < 60: return None
+        e50_15 = ema(df15["Close"], 50)
+        e200_15 = ema(df15["Close"], 200)
+        if e50_15.dropna().empty or e200_15.dropna().empty: return None
+        trend15 = "BUY" if e50_15.iloc[-1] > e200_15.iloc[-1] else "SELL"
+        if trend15 != trend5: return None
 
-        ema50_15 = ema(df15["Close"], 50)
-        ema200_15 = ema(df15["Close"], 200)
-
-        if ema50_15.dropna().empty or ema200_15.dropna().empty:
-            return None
-
-        trend15 = "BUY" if ema50_15.iloc[-1] > ema200_15.iloc[-1] else "SELL"
-
-        if trend15 != trend5:
-            return None
-
-    # Success — build signal
     return {
         "symbol": symbol,
         "trend": trend5,
         "price": round(last_price, 6),
         "strength": int(strength),
-        "reasons": reasons,
         "support": round(support, 6),
-        "resistance": round(resistance, 6)
+        "resistance": round(resist, 6)
     }
 
-# ---------- commands ----------
+# ---------- Telegram commands ----------
 @bot.message_handler(commands=["mode"])
 def cmd_mode(msg):
     global MODE
     chat = msg.chat.id
-    text = msg.text.strip().lower()
-    if "/mode" in text:
-        parts = text.split()
-        if len(parts) == 2 and parts[1] in THRESHOLDS:
-            MODE = parts[1]
-            bot.send_message(chat, f"Режим: {MODE}. Порог: {THRESHOLDS[MODE]}")
-            return
-    bot.send_message(chat, f"Поточний режим: {MODE}. Щоб змінити: /mode aggressive або /mode conservative")
+    t = msg.text.lower().split()
+    if len(t) == 2 and t[1] in THRESHOLDS:
+        MODE = t[1]
+        bot.send_message(chat, f"MODE set: {MODE}")
+    else:
+        bot.send_message(chat, f"Current mode: {MODE}")
 
 @bot.message_handler(commands=["signal","scan"])
 def cmd_signal(msg):
     chat = msg.chat.id
-    bot.send_message(chat, f"🔎 Сканую (mode={MODE}) — перегляну до {MAX_ASSETS_PER_SCAN} активів з payout≥{int(PAYOUT_MIN*100)}% ...")
+    bot.send_message(chat, f"🔎 Scanning ({MODE})...")
     assets = ensure_assets()
-    candidates = [a for a in assets if a.get("payout",0) >= PAYOUT_MIN]
-    if not candidates:
-        bot.send_message(chat, "⚠️ В assets.json немає активів з payout>=threshold.")
+    cand = [a for a in assets if a.get("payout",0) >= PAYOUT_MIN][:MAX_ASSETS_PER_SCAN]
+    if not cand:
+        bot.send_message(chat, "No assets with enough payout.")
         return
-    candidates = candidates[:MAX_ASSETS_PER_SCAN]
-    res_list = []
-    for a in candidates:
-        sym = a["symbol"]
-        cache_key = f"ana_{sym}_{MODE}"
-        cached = cache_get(cache_key)
-        if cached:
-            res_list.append(cached); continue
-        res = analyze_one(sym, use_15m_confirm=THRESHOLDS[MODE]["USE_15M"])
-        if res:
-            res["display"] = a.get("display", sym)
-            res["payout"] = a.get("payout",0)
-            res_list.append(res)
-            cache_set(cache_key, res)
+    results = []
+    for a in cand:
+        sym = a['symbol']
+        ck = f"ana_{sym}_{MODE}"
+        pc = cache_get(ck)
+        if pc: results.append(pc); continue
+        r = analyze_one(sym, THRESHOLDS[MODE]["USE_15M"])
+        if r:
+            r['display'] = a.get('display', sym)
+            r['payout'] = a.get('payout',0)
+            results.append(r)
+            cache_set(ck, r)
         else:
-            cache_set(cache_key, None)
+            cache_set(ck, None)
         time.sleep(0.8)
-    if not res_list:
-        bot.send_message(chat, "❌ Немає сильних сигналів зараз. Спробуй пізніше або /mode aggressive")
+    if not results:
+        bot.send_message(chat, "❌ No strong signals now.")
         return
-    res_list = sorted(res_list, key=lambda x: (x["strength"], x.get("payout",0)), reverse=True)
-    lines = []
-    for r in res_list[:5]:
-        lines.append(
-            f"📌 {r['display']} ({r['symbol']})\n"
-            f"🔔 {r['trend']}  |  Strength: {r['strength']}%\n"
-            f"💰 Payout: {int(r.get('payout',0)*100)}%  |  Price: {r['price']}\n"
-            f"📈 Reasons: {', '.join(r['reasons'])}\n"
-            f"🛑 S: {r['support']}  ▶ R: {r['resistance']}\n"
-            f"⏱ Expiry (info): {EXPIRY_MIN} min\n"
-            "—"
-        )
-    bot.send_message(chat, "\n\n".join(lines))
+    results = sorted(results, key=lambda x: (x['strength'], x.get('payout',0)), reverse=True)
 
-@bot.message_handler(commands=["help","start"])
+    out = []
+    for r in results[:5]:
+        out.append(
+            f"📌 {r['display']} ({r['symbol']})\n"
+            f"🔔 {r['trend']} | Strength {r['strength']}%\n"
+            f"💰 Payout {int(r['payout']*100)}% | Price {r['price']}\n"
+            f"🛑 S {r['support']} ▶ R {r['resistance']}\n"
+            f"⏱ Expiry {EXPIRY_MIN} min\n—"
+        )
+    bot.send_message(chat, "\n\n".join(out))
+
+@bot.message_handler(commands=["start","help"])
 def cmd_help(msg):
-    chat = msg.chat.id
-    bot.send_message(chat,
-        "Тестер сигналів (інформаційно):\n"
-        "/signal — шукати сигнали\n"
-        "/mode <aggressive|conservative> — переключити режим\n"
-        "Режим conservative потребує 15m підтвердження (рідкіше, але якісніше)."
+    bot.send_message(msg.chat.id,
+        "Signal tester (webhook).\n"
+        "/signal – scan signals\n"
+        "/mode <aggressive|conservative> — switch mode"
     )
 
-# ---------- run ----------
+# ---------- Webhook ----------
+@app.route(f"/webhook", methods=["POST"])
+def telegram_webhook():
+    json_update = request.get_json(force=True)
+    bot.process_new_updates([telebot.types.Update.de_json(json_update)])
+    return "", 200
+
+@app.route("/")
+def home(): return "OK", 200
+
+# ---------- RUN (Render) ----------
 if __name__ == "__main__":
-    print("Tester bot starting (strict filters).")
-    bot.infinity_polling(timeout=60, long_polling_timeout=60)
+    bot.delete_webhook()
+    bot.set_webhook(url=WEBHOOK_URL)
+    app.run(host="0.0.0.0", port=10000)
