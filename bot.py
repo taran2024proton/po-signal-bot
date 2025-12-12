@@ -1,5 +1,5 @@
 # ===============================================================
-# main.py — Stable Render Webhook Bot
+# main.py — Stable Render Webhook Bot (FIXED)
 # ===============================================================
 
 import json
@@ -29,7 +29,7 @@ THRESHOLDS = {
     "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False}
 }
 
-bot = telebot.TeleBot(TOKEN, threaded=False)
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML")  # FIXED
 app = Flask(__name__)
 
 # ---------------- CACHE ----------------
@@ -249,12 +249,12 @@ def help_cmd(msg):
         "/mode <aggressive|conservative> — set mode\n"
     )
 
-# ---------------- WEBHOOK ----------------
+# ---------------- WEBHOOK (FIXED) ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        raw = request.get_data().decode("utf-8")
-        update = telebot.types.Update.de_json(raw)
+        data = request.get_json(force=True)   # FIX: always parse JSON
+        update = telebot.types.Update.de_json(json.dumps(data))
         bot.process_new_updates([update])
     except Exception as e:
         print("Webhook error:", e)
