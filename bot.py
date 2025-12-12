@@ -1,4 +1,4 @@
-# bot.py — Final stable version for Render (long-polling, nice signals UA)
+# bot.py — Final stable version for Render (Webhook version)
 import os
 import time
 import threading
@@ -7,7 +7,9 @@ import requests
 import yfinance as yf
 import pandas as pd
 import numpy as np
-from http.server import HTTPServer, BaseHTTPRequestHandler
+import json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+from urllib.parse import urlparse, parse_qs
 
 # ---------------- CONFIG (from Render environment) ----------------
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -19,30 +21,13 @@ MIN_STRENGTH = int(os.getenv("MIN_STRENGTH", "75"))        # minimal score to se
 if not TELEGRAM_TOKEN:
     raise SystemExit("ERROR: TELEGRAM_TOKEN not set in environment variables")
 
-TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
+TELEGRAM_API = f"api.telegram.org{TELEGRAM_TOKEN}"
 SEND_MESSAGE_URL = TELEGRAM_API + "/sendMessage"
-GET_UPDATES_URL = TELEGRAM_API + "/getUpdates"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("po-signal-bot")
 
 SUBSCRIBERS = set()
-LAST_UPDATE_ID = None
-
-# ---------- Minimal HTTP server so Render sees an open port ----------
-class SimpleHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.send_header("Content-Type", "text/plain; charset=utf-8")
-        self.end_headers()
-        self.wfile.write(b"Bot is running\n")
-    def log_message(self, format, *args):
-        return
-
-def run_http_server():
-    server = HTTPServer(("0.0.0.0", PORT), SimpleHandler)
-    logger.info(f"HTTP server listening on port {PORT}")
-    server.serve_forever()
 
 # ---------------- Telegram helpers ----------------
 def send_message(chat_id, text):
@@ -59,56 +44,63 @@ def send_message(chat_id, text):
         logger.exception("send_message exception")
         return False
 
-# robust getUpdates loop (avoids webhook, avoids 409 crash)
-def process_updates_loop():
-    global LAST_UPDATE_ID
-    params = {"timeout": 20, "limit": 50}
-    while True:
+def handle_telegram_message(msg):
+    if not msg:
+        return
+
+    chat_id = msg["chat"]["id"]
+    text = (msg.get("text") or "").strip()
+
+    logger.info("Received message from %s: %s", chat_id, text)
+
+    if text == "/start":
+        SUBSCRIBERS.add(chat_id)
+        send_message(chat_id, "Привіт! Тепер ти підписаний(а) на сигнали. Напиши /stop щоб відписатися.")
+    elif text == "/stop":
+        SUBSCRIBERS.discard(chat_id)
+        send_message(chat_id, "Ти відписаний(а).")
+    elif text == "/subs":
+        send_message(chat_id, f"Підписників: {len(SUBSCRIBERS)}")
+    elif text == "/help":
+        send_message(chat_id, "Команди: /start, /stop, /subs.")
+
+# ---------- HTTP Server for Webhooks ----------
+class WebhookHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        # Respond to Render health checks
+        self.send_response(200)
+        self.send_header("Content-Type", "text/plain; charset=utf-8")
+        self.end_headers()
+        self.wfile.write(b"Bot is running (Webhook mode)\n")
+        
+    def do_POST(self):
+        # Handle incoming Telegram messages
+        self.send_response(200)
+        self.end_headers()
+        content_length = int(self.headers['Content-Length'])
+        post_data = self.rfile.read(content_length)
+        
         try:
-            if LAST_UPDATE_ID is not None:
-                params["offset"] = LAST_UPDATE_ID + 1
-
-            r = requests.get(GET_UPDATES_URL, params=params, timeout=30)
-
-            if not r.ok:
-                if r.status_code == 409:
-                    logger.error("409 conflict — another getUpdates is running elsewhere. Stop other instances.")
-                    time.sleep(10)
-                else:
-                    time.sleep(5)
-                continue
-
-            data = r.json()
-            for upd in data.get("result", []):
-                LAST_UPDATE_ID = upd["update_id"]
-                msg = upd.get("message") or upd.get("edited_message")
-                if not msg:
-                    continue
-
-                chat_id = msg["chat"]["id"]
-                text = (msg.get("text") or "").strip()
-
-                logger.info("Received message from %s: %s", chat_id, text)
-
-                if text == "/start":
-                    SUBSCRIBERS.add(chat_id)
-                    send_message(chat_id, "Привіт! Тепер ти підписаний(а) на сигнали. Напиши /stop щоб відписатися.")
-                elif text == "/stop":
-                    SUBSCRIBERS.discard(chat_id)
-                    send_message(chat_id, "Ти відписаний(а).")
-                elif text == "/subs":
-                    send_message(chat_id, f"Підписників: {len(SUBSCRIBERS)}")
-                elif text == "/help":
-                    send_message(chat_id, "Команди: /start, /stop, /subs.")
-
+            update = json.loads(post_data)
+            handle_telegram_message(update.get("message") or update.get("edited_message"))
+        except json.JSONDecodeError:
+            logger.warning("Failed to parse JSON from POST request")
         except Exception:
-            logger.exception("process_updates crashed, retry in 5s")
-            time.sleep(5)
+            logger.exception("Error handling POST request")
 
-# ---------------- Indicators ----------------
+    def log_message(self, format, *args):
+        # Suppress HTTP logs for cleaner output
+        return
+
+def run_http_server():
+    server = HTTPServer(("0.0.0.0", PORT), WebhookHandler)
+    logger.info(f"Webhook server listening on port {PORT}")
+    server.serve_forever()
+
+# ---------------- Indicators (Code below is unchanged) ----------------
 def ema(series, span):
     return series.ewm(span=span, adjust=False).mean()
-
+# ... (весь інший код функцій rsi, macd_hist, analyze_symbol, build_message залишається незмінним)
 def rsi(series, period=14):
     delta = series.diff()
     gain = delta.clip(lower=0)
@@ -125,7 +117,6 @@ def macd_hist(series, fast=12, slow=26, signal=9):
     macd_signal = macd.ewm(span=signal, adjust=False).mean()
     return macd - macd_signal
 
-# ---------------- Market analysis ----------------
 ASSETS = [
     ("EURUSD=X", "EUR/USD"),
     ("GBPUSD=X", "GBP/USD"),
@@ -136,7 +127,6 @@ ASSETS = [
 
 def analyze_symbol(symbol):
     try:
-        # -------- 5m data --------
         df = yf.download(symbol, period="3d", interval="5m", progress=False)
         if df is None or df.empty or len(df) < 80:
             return None
@@ -150,7 +140,6 @@ def analyze_symbol(symbol):
         rsi5 = rsi(close)
         macd5 = macd_hist(close)
 
-        # convert to numeric scalars
         ema50_last = float(ema50.iloc[-1])
         ema200_last = float(ema200.iloc[-1])
         last_rsi = float(rsi5.iloc[-1])
@@ -160,16 +149,13 @@ def analyze_symbol(symbol):
         if pd.isna(ema200_last) or pd.isna(ema50_last):
             return None
 
-        # trend
         trend = "BUY" if ema50_last > ema200_last else "SELL"
 
-        # ATR approx
         atr = (df["High"] - df["Low"]).rolling(14).mean()
         if pd.isna(atr.iloc[-1]):
             return None
         last_atr = float(atr.iloc[-1])
 
-        # support / resistance
         recent = df[-120:]
         support = float(recent["Low"].min())
         resistance = float(recent["High"].max())
@@ -177,7 +163,6 @@ def analyze_symbol(symbol):
         near_support = abs(last_price - support) <= max(last_atr * 1.2, last_price * 0.0015)
         near_resistance = abs(last_price - resistance) <= max(last_atr * 1.2, last_price * 0.0015)
 
-        # scoring
         score = 0
         reasons = []
 
@@ -198,7 +183,6 @@ def analyze_symbol(symbol):
 
         strength = min(100, int(score))
 
-        # -------- 15m confirmation --------
         df15 = yf.download(symbol, period="7d", interval="15m", progress=False)
         if df15 is None or df15.empty or len(df15) < 50:
             return None
@@ -225,7 +209,6 @@ def analyze_symbol(symbol):
         logger.exception("analyze_symbol error")
         return None
 
-# ---------------- Message builder ----------------
 def build_message(item, display):
     verb = "Купити" if item["trend"] == "BUY" else "Продати"
     return (
@@ -270,6 +253,7 @@ def signal_worker():
 
 # ---------------- Main ----------------
 if __name__ == "__main__":
+    # The main loop is now the HTTP server thread (webhook listener)
     threading.Thread(target=run_http_server, daemon=True).start()
-    threading.Thread(target=process_updates_loop, daemon=True).start()
+    # The signal generation runs in the main thread/process
     signal_worker()
