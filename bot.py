@@ -29,7 +29,7 @@ THRESHOLDS = {
     "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False}
 }
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
 
 # ---------------- CACHE (FIXED UTC) ----------------
