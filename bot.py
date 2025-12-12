@@ -5,7 +5,7 @@ import numpy as np
 from datetime import datetime
 import time
 
-TOKEN = "ВСТАВ СВІЙ ТЕЛЕГРАМ ТОКЕН ТУТ"
+TOKEN = "8517986396:AAGCDudeHdGvs14rb9VsfHrakvjyOrTr_3c"
 
 bot = telebot.TeleBot(TOKEN)
 
