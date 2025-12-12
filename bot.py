@@ -49,7 +49,7 @@ def cache_get(key):
     return obj.get("data")
 
 def cache_set(key, data):
-    cache[key] = {"_ts": datetime.utcnow().isoformat(), "data": data}
+    cache[key] = {"_ts": datetime.now(datetime.UTC).isoformat(), "data": data}
     save_cache(cache)
 
 # ---------- indicators ----------
@@ -100,7 +100,7 @@ def fetch_ohlcv(symbol, interval):
         try: return pd.read_json(c).set_index("Datetime")
         except: pass
     try:
-        df = yf.download(symbol, period="3d", interval=interval, progress=False)
+        df = yf.download(symbol, period="3d", interval=interval, progress=False, auto_adjust=True)
         if df is None or df.empty: return None
         js = df.reset_index().to_json(date_format='iso')
         cache_set(key, js)
