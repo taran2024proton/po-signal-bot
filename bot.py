@@ -13,8 +13,8 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
 PORT = int(os.getenv("PORT", "10000"))
 SIGNAL_INTERVAL = int(os.getenv("SIGNAL_INTERVAL", "60"))  # seconds between market scans
-MIN_STRENGTH = int(os.getenv("MIN_STRENGTH", "75"))       # minimal score to send signal
-# -----------------------------------------------------------------
+MIN_STRENGTH = int(os.getenv("MIN_STRENGTH", "75"))        # minimal score to send signal
+# ------------------------------------------------------------------
 
 if not TELEGRAM_TOKEN:
     raise SystemExit("ERROR: TELEGRAM_TOKEN not set in environment variables")
@@ -22,8 +22,6 @@ if not TELEGRAM_TOKEN:
 TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_TOKEN}"
 SEND_MESSAGE_URL = TELEGRAM_API + "/sendMessage"
 GET_UPDATES_URL = TELEGRAM_API + "/getUpdates"
-GET_ME_URL = TELEGRAM_API + "/getMe"
-GET_WEBHOOK_INFO = TELEGRAM_API + "/getWebhookInfo"
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 logger = logging.getLogger("po-signal-bot")
@@ -61,60 +59,53 @@ def send_message(chat_id, text):
         logger.exception("send_message exception")
         return False
 
-# robust getUpdates handler (long-polling)
+# robust getUpdates loop (avoids webhook, avoids 409 crash)
 def process_updates_loop():
     global LAST_UPDATE_ID
     params = {"timeout": 20, "limit": 50}
-    backoff = 1
     while True:
         try:
             if LAST_UPDATE_ID is not None:
                 params["offset"] = LAST_UPDATE_ID + 1
+
             r = requests.get(GET_UPDATES_URL, params=params, timeout=30)
+
             if not r.ok:
-                txt = r.text if r is not None else ""
-                logger.warning("getUpdates failed: %s %s", r.status_code, txt)
-                # handle 409 Conflict specifically
                 if r.status_code == 409:
-                    logger.error("409 conflict — another getUpdates is running elsewhere. Stop other instances and restart this service.")
-                    time.sleep(10)  # wait and retry
+                    logger.error("409 conflict — another getUpdates is running elsewhere. Stop other instances.")
+                    time.sleep(10)
                 else:
-                    time.sleep(min(backoff, 30))
-                    backoff = min(backoff * 2, 30)
+                    time.sleep(5)
                 continue
-            backoff = 1
+
             data = r.json()
             for upd in data.get("result", []):
                 LAST_UPDATE_ID = upd["update_id"]
                 msg = upd.get("message") or upd.get("edited_message")
                 if not msg:
                     continue
-                chat = msg.get("chat", {})
-                chat_id = chat.get("id")
+
+                chat_id = msg["chat"]["id"]
                 text = (msg.get("text") or "").strip()
-                if not text or chat_id is None:
-                    continue
+
                 logger.info("Received message from %s: %s", chat_id, text)
-                # commands
-                if text.startswith("/start"):
+
+                if text == "/start":
                     SUBSCRIBERS.add(chat_id)
                     send_message(chat_id, "Привіт! Тепер ти підписаний(а) на сигнали. Напиши /stop щоб відписатися.")
-                elif text.startswith("/stop"):
-                    if chat_id in SUBSCRIBERS:
-                        SUBSCRIBERS.remove(chat_id)
+                elif text == "/stop":
+                    SUBSCRIBERS.discard(chat_id)
                     send_message(chat_id, "Ти відписаний(а).")
-                elif text.startswith("/subs"):
+                elif text == "/subs":
                     send_message(chat_id, f"Підписників: {len(SUBSCRIBERS)}")
-                elif text.startswith("/help"):
-                    send_message(chat_id, "Команди: /start підписатися, /stop відписатися, /subs кількість підписників.")
-        except requests.exceptions.ReadTimeout:
-            # normal for long polling
-            continue
+                elif text == "/help":
+                    send_message(chat_id, "Команди: /start, /stop, /subs.")
+
         except Exception:
-            logger.exception("process_updates crashed, retrying in 5s")
+            logger.exception("process_updates crashed, retry in 5s")
             time.sleep(5)
 
-# ---------------- Indicators (no external C libs) ----------------
+# ---------------- Indicators ----------------
 def ema(series, span):
     return series.ewm(span=span, adjust=False).mean()
 
@@ -145,88 +136,99 @@ ASSETS = [
 
 def analyze_symbol(symbol):
     try:
-        df5 = yf.download(symbol, period="3d", interval="5m", progress=False)
-        if df5 is None or df5.empty or len(df5) < 60:
-            return None
-        close5 = df5["Close"].dropna()
-        ema50 = ema(close5, 50)
-        ema200 = ema(close5, 200)
-        rsi5 = rsi(close5)
-        macd5 = macd_hist(close5)
-
-        # last numeric values (use iloc to avoid ambiguity)
-        if len(close5) < 1:
-            return None
-        last_close = float(close5.iloc[-1])
-
-        if pd.isna(ema200.iloc[-1].item()):
+        # -------- 5m data --------
+        df = yf.download(symbol, period="3d", interval="5m", progress=False)
+        if df is None or df.empty or len(df) < 80:
             return None
 
-        trend = "BUY" if ema50.iloc[-1] > ema200.iloc[-1] else "SELL"
+        close = df["Close"].dropna()
+        if len(close) < 50:
+            return None
+
+        ema50 = ema(close, 50)
+        ema200 = ema(close, 200)
+        rsi5 = rsi(close)
+        macd5 = macd_hist(close)
+
+        # convert to numeric scalars
+        ema50_last = float(ema50.iloc[-1])
+        ema200_last = float(ema200.iloc[-1])
         last_rsi = float(rsi5.iloc[-1])
         last_macd = float(macd5.iloc[-1])
+        last_price = float(close.iloc[-1])
+
+        if pd.isna(ema200_last) or pd.isna(ema50_last):
+            return None
+
+        # trend
+        trend = "BUY" if ema50_last > ema200_last else "SELL"
 
         # ATR approx
-        high_low = df5["High"] - df5["Low"]
-        atr = high_low.rolling(14).mean()
-        if pd.isna(atr.iloc[-1]) or atr.iloc[-1] == 0:
+        atr = (df["High"] - df["Low"]).rolling(14).mean()
+        if pd.isna(atr.iloc[-1]):
             return None
         last_atr = float(atr.iloc[-1])
 
-        # support/resistance
-        window = min(len(df5), 120)
-        recent = df5[-window:]
+        # support / resistance
+        recent = df[-120:]
         support = float(recent["Low"].min())
         resistance = float(recent["High"].max())
-        near_support = abs(last_close - support) <= max(last_atr * 1.2, last_close * 0.0015)
-        near_resistance = abs(last_close - resistance) <= max(last_atr * 1.2, last_close * 0.0015)
+
+        near_support = abs(last_price - support) <= max(last_atr * 1.2, last_price * 0.0015)
+        near_resistance = abs(last_price - resistance) <= max(last_atr * 1.2, last_price * 0.0015)
 
         # scoring
         score = 0
         reasons = []
+
         score += 20; reasons.append("Trend")
+
         if trend == "BUY" and last_rsi < 55:
             score += 25; reasons.append(f"RSI{int(last_rsi)}")
         if trend == "SELL" and last_rsi > 45:
             score += 25; reasons.append(f"RSI{int(last_rsi)}")
+
         if trend == "BUY" and last_macd > 0:
             score += 20; reasons.append("MACD+")
         if trend == "SELL" and last_macd < 0:
             score += 20; reasons.append("MACD-")
+
         if (trend == "BUY" and near_support) or (trend == "SELL" and near_resistance):
             score += 15; reasons.append("NearSR")
 
         strength = min(100, int(score))
 
-        # 15m confirmation
+        # -------- 15m confirmation --------
         df15 = yf.download(symbol, period="7d", interval="15m", progress=False)
-        if df15 is None or df15.empty or len(df15) < 30:
+        if df15 is None or df15.empty or len(df15) < 50:
             return None
+
         close15 = df15["Close"].dropna()
-        ema50_15 = ema(close15, 50)
-        ema200_15 = ema(close15, 200)
-        if pd.isna(ema200_15.iloc[-1]):
-            return None
-        trend15 = "BUY" if ema50_15.iloc[-1] > ema200_15.iloc[-1] else "SELL"
+        ema50_15 = float(close15.ewm(span=50).mean().iloc[-1])
+        ema200_15 = float(close15.ewm(span=200).mean().iloc[-1])
+
+        trend15 = "BUY" if ema50_15 > ema200_15 else "SELL"
         if trend15 != trend:
             return None
 
         return {
             "symbol": symbol,
-            "price": round(last_close, 6),
+            "price": round(last_price, 6),
             "trend": trend,
             "strength": strength,
             "reasons": reasons,
             "support": round(support, 6),
             "resistance": round(resistance, 6)
         }
+
     except Exception:
         logger.exception("analyze_symbol error")
         return None
 
+# ---------------- Message builder ----------------
 def build_message(item, display):
     verb = "Купити" if item["trend"] == "BUY" else "Продати"
-    text = (
+    return (
         f"📌 Пара: {display}\n"
         f"🔔 Сигнал: {verb}\n\n"
         f"🔥 Потужність: {item['strength']}%\n"
@@ -235,7 +237,6 @@ def build_message(item, display):
         f"📈 Підтвердження: {', '.join(item['reasons'])}\n"
         f"🛑 S: {item['support']}  ▶️ R: {item['resistance']}\n"
     )
-    return text
 
 # ---------------- Signal worker ----------------
 def signal_worker():
@@ -243,7 +244,6 @@ def signal_worker():
     while True:
         try:
             if not SUBSCRIBERS:
-                logger.debug("No subscribers, skipping scan")
                 time.sleep(SIGNAL_INTERVAL)
                 continue
 
@@ -255,27 +255,21 @@ def signal_worker():
 
             if results:
                 results.sort(key=lambda x: x[0]["strength"], reverse=True)
-                to_send = results[:3]
-                for (res, disp) in to_send:
+                for res, disp in results[:3]:
                     text = build_message(res, disp)
-                    for chat in list(SUBSCRIBERS):
-                        send_message(chat, text)
+                    for chat_id in list(SUBSCRIBERS):
+                        send_message(chat_id, text)
                         time.sleep(0.3)
             else:
                 logger.info("No strong signals this cycle")
+
         except Exception:
             logger.exception("signal_worker crashed")
+
         time.sleep(SIGNAL_INTERVAL)
 
-# ---------------- Main start ----------------
+# ---------------- Main ----------------
 if __name__ == "__main__":
-    # 1) start HTTP server thread so Render sees open port
-    t_http = threading.Thread(target=run_http_server, daemon=True)
-    t_http.start()
-
-    # 2) start updates polling thread
-    t_upd = threading.Thread(target=process_updates_loop, daemon=True)
-    t_upd.start()
-
-    # 3) run signal loop in main thread
+    threading.Thread(target=run_http_server, daemon=True).start()
+    threading.Thread(target=process_updates_loop, daemon=True).start()
     signal_worker()
