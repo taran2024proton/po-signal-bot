@@ -1,11 +1,11 @@
 # ===============================================================
-# main.py — Stable Render Webhook Bot (FIXED)
+# main.py — Stable Render Webhook Bot (FINAL VERSION)
 # ===============================================================
 
 import json
 import time
 from pathlib import Path
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, UTC # Added UTC
 import yfinance as yf
 import pandas as pd
 import telebot
@@ -13,7 +13,7 @@ from flask import Flask, request
 
 # ---------------- CONFIG ----------------
 TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
-WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com/webhook"
+WEBHOOK_URL = "po-signal-bot-gwu0.onrender.com"
 
 ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
@@ -29,10 +29,10 @@ THRESHOLDS = {
     "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False}
 }
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML")  # FIXED
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML")
 app = Flask(__name__)
 
-# ---------------- CACHE ----------------
+# ---------------- CACHE (FIXED UTC) ----------------
 def load_cache():
     try:
         return json.loads(Path(CACHE_FILE).read_text(encoding="utf-8"))
@@ -89,18 +89,19 @@ def atr(df, period=14):
     tr = pd.concat([hl, h_pc, l_pc], axis=1).max(axis=1)
     return tr.rolling(period).mean()
 
-# ---------------- ASSETS ----------------
+# ---------------- ASSETS (Fixed single asset for testing) ----------------
 def ensure_assets():
     try:
         return json.loads(Path(ASSETS_FILE).read_text(encoding="utf-8"))
     except:
         default = [
             {"symbol": "EURUSD=X", "display": "EUR/USD", "payout": 0.90},
+            # Removed other assets to debug yfinance issue
         ]
         Path(ASSETS_FILE).write_text(json.dumps(default, ensure_ascii=False, indent=2))
         return default
 
-# ---------------- FETCH DATA ----------------
+# ---------------- FETCH DATA (Fixed auto_adjust) ----------------
 def fetch_ohlcv(symbol, interval):
     key = f"{symbol}_{interval}"
     cached = cache_get(key)
@@ -112,13 +113,16 @@ def fetch_ohlcv(symbol, interval):
             pass
 
     try:
+        # Added auto_adjust=True to fix FutureWarning
         df = yf.download(symbol, period="3d", interval=interval, progress=False, auto_adjust=True)
         if df is None or df.empty:
             return None
         js = df.reset_index().to_json(date_format="iso")
         cache_set(key, js)
         return df.reset_index().set_index("Datetime")
-    except:
+    except Exception as e:
+        # Log error if download fails
+        print(f"yfinance download error for {symbol}: {e}")
         return None
 
 # ---------------- ANALYSIS ----------------
@@ -126,7 +130,7 @@ def analyze(symbol, use_15m=True):
     df5 = fetch_ohlcv(symbol, "5m")
     if df5 is None or len(df5) < 100:
         return None
-
+    # ... (rest of analyze function remains unchanged) ...
     df5 = df5.tail(300)
 
     atr_val = atr(df5).iloc[-1]
@@ -187,15 +191,13 @@ def set_mode(msg):
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan(msg):
-    print(f"DEBUG: Command signal received for chat {msg.chat.id}, mode {MODE}.")
+    # Removed DEBUG prints as they are not appearing in Render logs anyway
     bot.send_message(msg.chat.id, f"🔍 Scanning ({MODE})...")
 
     assets = ensure_assets()
     use_15m = THRESHOLDS[MODE]["USE_15M"]
 
     valid = [a for a in assets if a["payout"] >= PAYOUT_MIN][:MAX_ASSETS_PER_SCAN]
-    print(f"DEBUG: Found {len(valid)} assets to scan.")
-    
     if not valid:
         bot.send_message(msg.chat.id, "No assets with high payout.")
         return
@@ -210,17 +212,13 @@ def scan(msg):
             results.append(cached)
             continue
 
-        print(f"DEBUG: Analyzing {a['symbol']}...")
-
         res = analyze(a["symbol"], use_15m)
         if res:
-            print(f"DEBUG: Signal found for {a['symbol']} (Strength: {res['strength']})")
             res["display"] = a["display"]
             res["payout"] = a["payout"]
             results.append(res)
             cache_set(key, res)
         else:
-            print(f"DEBUG: No strong signal for {a['symbol']}, skipping.")
             cache_set(key, None)
 
         time.sleep(1)
@@ -228,8 +226,7 @@ def scan(msg):
     if not results:
         bot.send_message(msg.chat.id, "❌ No strong signals right now.")
         return
-        print(f"DEBUG: {len(results)} signals found in total. Sending message.")
-
+    
     results = sorted(results, key=lambda x: (x["strength"], x["payout"]), reverse=True)
 
     text = []
@@ -252,20 +249,16 @@ def help_cmd(msg):
         "/mode <aggressive|conservative> — set mode\n"
     )
 
-# ---------------- WEBHOOK (FIXED + FORCED DEBUG) ----------------
+# ---------------- WEBHOOK (Alternative handling) ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    try:
-        data = request.get_json(force=True)
-        # ПРИМУСОВИЙ ДРУК ДАНИХ, ЯКІ ПРИЙШЛИ:
-        print(f"WEBHOOK DATA: {data}") 
-        
-        update = telebot.types.Update.de_json(json.dumps(data))
+    if request.headers.get("content-type") == "application/json":
+        json_string = request.get_data(as_text=True)
+        update = telebot.types.Update.de_json(json_string)
         bot.process_new_updates([update])
-    except Exception as e:
-        print(f"Webhook error: {e}")
-    return "OK", 200
-
+        return "OK", 200
+    else:
+        return "Bad Request", 403
 
 @app.route("/")
 def root():
