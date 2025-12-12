@@ -247,6 +247,7 @@ def cmd_help(msg):
 @app.route(f"/webhook", methods=["POST"])
 def telegram_webhook():
     json_update = request.get_json(force=True)
+    print(f"DEBUG: Received update: {json_update}") 
     bot.process_new_updates([telebot.types.Update.de_json(json_update)])
     return "", 200
 
