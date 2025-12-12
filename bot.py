@@ -189,6 +189,7 @@ def cmd_mode(msg):
 @bot.message_handler(commands=["signal","scan"])
 def cmd_signal(msg):
     chat = msg.chat.id
+    print(f"DEBUG: Command signal received for chat {chat}, mode {MODE}.")
     bot.send_message(chat, f"🔎 Scanning ({MODE})...")
     assets = ensure_assets()
     cand = [a for a in assets if a.get("payout",0) >= PAYOUT_MIN][:MAX_ASSETS_PER_SCAN]
