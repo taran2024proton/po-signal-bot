@@ -1,15 +1,61 @@
-import telebot
+# main.py — Тестер/Симулятор сигналів (жорсткі фільтри, expiry info=3min)
+import json, time
+from pathlib import Path
+from datetime import datetime, timedelta
 import yfinance as yf
-import pandas as pd
 import numpy as np
-from datetime import datetime
-import time
+import pandas as pd
+import telebot
 
-TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
+# ========== Налаштування ==========
+TOKEN = "PUT_YOUR_TELEGRAM_TOKEN_HERE"   # <- встав свій токен
+ASSETS_FILE = "assets.json"
+CACHE_FILE = "cache.json"
+CACHE_SECONDS = 90           # кеш, щоб зменшити запити
+MAX_ASSETS_PER_SCAN = 6      # скільки активів сканувати за виклик
+PAYOUT_MIN = 0.85            # враховуємо лише активи з payout>=85% (в assets.json)
+EXPIRY_MIN = 3               # інформативна експірація
+MODE = "conservative"        # conservative (жорстко) або aggressive
+THRESHOLDS = {
+    "conservative": {"MIN_STRENGTH": 80, "USE_15M": True},
+    "aggressive":   {"MIN_STRENGTH": 70, "USE_15M": False}
+}
+# ==================================
 
 bot = telebot.TeleBot(TOKEN)
 
-# --- індикатори ---
+# ---------- cache ----------
+def load_cache():
+    p = Path(CACHE_FILE)
+    if not p.exists():
+        return {}
+    try:
+        return json.loads(p.read_text(encoding='utf-8'))
+    except:
+        return {}
+
+def save_cache(cache):
+    try:
+        Path(CACHE_FILE).write_text(json.dumps(cache), encoding='utf-8')
+    except:
+        pass
+
+cache = load_cache()
+
+def cache_get(key):
+    obj = cache.get(key)
+    if not obj:
+        return None
+    ts = datetime.fromisoformat(obj.get("_ts"))
+    if datetime.utcnow() - ts > timedelta(seconds=CACHE_SECONDS):
+        return None
+    return obj.get("data")
+
+def cache_set(key, data):
+    cache[key] = {"_ts": datetime.utcnow().isoformat(), "data": data}
+    save_cache(cache)
+
+# ---------- indicators ----------
 def ema(series, period):
     return series.ewm(span=period, adjust=False).mean()
 
@@ -22,122 +68,227 @@ def rsi(series, period=14):
     rs = ma_up / ma_down
     return 100 - (100 / (1 + rs))
 
-def macd(series, fast=12, slow=26, signal=9):
-    ema_fast = series.ewm(span=fast).mean()
-    ema_slow = series.ewm(span=slow).mean()
+def macd_hist(series, fast=12, slow=26, signal=9):
+    ema_fast = series.ewm(span=fast, adjust=False).mean()
+    ema_slow = series.ewm(span=slow, adjust=False).mean()
     macd_line = ema_fast - ema_slow
-    macd_signal = macd_line.ewm(span=signal).mean()
+    macd_signal = macd_line.ewm(span=signal, adjust=False).mean()
     return macd_line - macd_signal
 
-# --- список активів з payout >= 85% ---
-ASSETS = {
-    "EURUSD=X": {"name": "EUR/USD", "payout": 0.90},
-    "GBPUSD=X": {"name": "GBP/USD", "payout": 0.88},
-    "USDJPY=X": {"name": "USD/JPY", "payout": 0.86},
-    "BTC-USD": {"name": "BTC/USD", "payout": 0.92},
-    "ETH-USD": {"name": "ETH/USD", "payout": 0.91}
-}
+def atr(df, period=14):
+    high_low = df['High'] - df['Low']
+    high_close = (df['High'] - df['Close'].shift()).abs()
+    low_close = (df['Low'] - df['Close'].shift()).abs()
+    tr = pd.concat([high_low, high_close, low_close], axis=1).max(axis=1)
+    return tr.rolling(period).mean()
 
-def analyze(symbol):
+# ---------- assets loader ----------
+def ensure_assets():
+    p = Path(ASSETS_FILE)
+    if not p.exists():
+        example = [
+            {"symbol":"EURUSD=X","display":"EUR/USD","payout":0.90},
+            {"symbol":"GBPUSD=X","display":"GBP/USD","payout":0.88},
+            {"symbol":"USDJPY=X","display":"USD/JPY","payout":0.86},
+            {"symbol":"BTC-USD","display":"BTC/USD","payout":0.92},
+            {"symbol":"ETH-USD","display":"ETH/USD","payout":0.91},
+            {"symbol":"AUDUSD=X","display":"AUD/USD","payout":0.87}
+        ]
+        p.write_text(json.dumps(example, ensure_ascii=False, indent=2))
+    return json.loads(p.read_text(encoding='utf-8'))
+
+# ---------- data fetch with cache ----------
+def fetch_ohlcv(symbol, interval):
+    key = f"{symbol}_{interval}"
+    c = cache_get(key)
+    if c is not None:
+        try:
+            return pd.read_json(c).set_index("Datetime")
+        except:
+            pass
     try:
-        df = yf.download(symbol, period="2d", interval="5m", progress=False)
-
+        df = yf.download(symbol, period="3d", interval=interval, progress=False)
         if df is None or df.empty:
             return None
-
-        close = df["Close"]
-
-        ema20 = ema(close, 20)
-        ema50 = ema(close, 50)
-        rsi14 = rsi(close, 14)
-        macd_hist = macd(close)
-
-        last = close.iloc[-1]
-        last_ema20 = ema20.iloc[-1]
-        last_ema50 = ema50.iloc[-1]
-        last_rsi = rsi14.iloc[-1]
-        last_macd = macd_hist.iloc[-1]
-
-        score = 0
-        reasons = []
-
-        # Тренд
-        if last_ema20 > last_ema50:
-            trend = "BUY"
-        else:
-            trend = "SELL"
-
-        # Підтвердження 1: RSI
-        if trend == "BUY" and last_rsi < 60:
-            score += 1
-            reasons.append("RSI")
-        if trend == "SELL" and last_rsi > 40:
-            score += 1
-            reasons.append("RSI")
-
-        # Підтвердження 2: MACD
-        if trend == "BUY" and last_macd > 0:
-            score += 1
-            reasons.append("MACD")
-        if trend == "SELL" and last_macd < 0:
-            score += 1
-            reasons.append("MACD")
-
-        # Підтвердження 3: EMA кут
-        if abs(last_ema20 - last_ema50) > 0:
-            score += 1
-            reasons.append("EMA")
-
-        if score >= 3:
-            return {
-                "symbol": symbol,
-                "trend": trend,
-                "price": round(float(last), 6),
-                "score": score,
-                "reasons": ", ".join(reasons)
-            }
-        return None
+        df2 = df.reset_index()
+        cache_set(key, df2.to_json(date_format='iso'))
+        df = df.reset_index().set_index("Datetime")
+        return df
     except:
         return None
 
-@bot.message_handler(commands=["signal"])
-def signal(message):
-    bot.send_message(message.chat.id, "🔍 Аналізую ринок з payout ≥ 85%...\nЗачекай 3–5 секунд 🔎")
+# ---------- analysis (strict filters) ----------
+def analyze_one(symbol, use_15m_confirm=True):
+    df5 = fetch_ohlcv(symbol, '5m')
+    if df5 is None or len(df5) < 60:
+        return None
 
-    results = []
+    close5 = df5['Close']
+    ema50_5 = ema(close5, 50)
+    ema200_5 = ema(close5, 200)
+    last_atr = float(atr(df5, 14).iloc[-1]) if not np.isnan(atr(df5,14).iloc[-1]) else 0.0
 
-    for symbol in ASSETS:
-        payout = ASSETS[symbol]["payout"]
+    # spike filter: велика свічка за останні 6 барів
+    recent = df5[-6:]
+    spike = False
+    for i in range(len(recent)):
+        rng = float(recent['High'].iloc[i] - recent['Low'].iloc[i])
+        if rng > max(last_atr * 3.5, float(close5.iloc[-1]) * 0.006):
+            spike = True
+            break
+    if spike:
+        return None
 
-        if payout < 0.85:
-            continue
+    if np.isnan(ema200_5.iloc[-1]):
+        return None
 
-        r = analyze(symbol)
-        if r:
-            r["name"] = ASSETS[symbol]["name"]
-            r["payout"] = payout
-            results.append(r)
+    if ema50_5.iloc[-1] > ema200_5.iloc[-1]:
+        trend5 = "BUY"
+    elif ema50_5.iloc[-1] < ema200_5.iloc[-1]:
+        trend5 = "SELL"
+    else:
+        trend5 = "NEUTRAL"
 
-        time.sleep(1)
+    if trend5 == "NEUTRAL":
+        return None
 
-    if not results:
-        bot.send_message(message.chat.id, "❌ Сильних сигналів немає.\nСпробуй пізніше.")
+    # indicators
+    last_rsi = float(rsi(close5,14).iloc[-1])
+    last_macd = float(macd_hist(close5).iloc[-1])
+
+    # support/resistance simple
+    window = 60
+    support = float(df5['Low'][-window:].min())
+    resistance = float(df5['High'][-window:].max())
+    last_price = float(close5.iloc[-1])
+    near_support = abs(last_price - support) <= max(last_atr*1.2, last_price*0.0015)
+    near_resist = abs(last_price - resistance) <= max(last_atr*1.2, last_price*0.0015)
+
+    # strength scoring (5 checks)
+    score = 0
+    reasons = []
+    # 1 trend
+    score += 20; reasons.append("Trend")
+    # 2 RSI (conservative)
+    if trend5 == "BUY" and last_rsi < 55:
+        score += 20; reasons.append(f"RSI{int(last_rsi)}")
+    if trend5 == "SELL" and last_rsi > 45:
+        score += 20; reasons.append(f"RSI{int(last_rsi)}")
+    # 3 MACD
+    if trend5 == "BUY" and last_macd > 0:
+        score += 20; reasons.append("MACD+")
+    if trend5 == "SELL" and last_macd < 0:
+        score += 20; reasons.append("MACD-")
+    # 4 S/R proximity
+    if trend5 == "BUY" and near_support:
+        score += 20; reasons.append("NearS")
+    if trend5 == "SELL" and near_resist:
+        score += 20; reasons.append("NearR")
+    # 5 volatility
+    vol_ok = last_atr >= (last_price * 0.00018)
+    if vol_ok:
+        score += 20; reasons.append("VolOK")
+
+    strength = int(min(100, score))
+
+    # 15m confirmation (conservative mode)
+    if use_15m_confirm:
+        df15 = fetch_ohlcv(symbol, '15m')
+        if df15 is None or len(df15) < 40:
+            return None
+        close15 = df15['Close']
+        ema50_15 = ema(close15, 50)
+        ema200_15 = ema(close15, 200)
+        if np.isnan(ema200_15.iloc[-1]):
+            return None
+        trend15 = "BUY" if ema50_15.iloc[-1] > ema200_15.iloc[-1] else "SELL"
+        if trend15 != trend5:
+            return None
+
+    # final gating by ATR minimal (avoid vanishing volatility)
+    if last_atr < (last_price * 0.00012):
+        return None
+
+    if strength >= THRESHOLDS[MODE]["MIN_STRENGTH"]:
+        return {
+            "symbol": symbol,
+            "trend": trend5,
+            "price": round(last_price,6),
+            "strength": strength,
+            "reasons": reasons,
+            "support": round(support,6),
+            "resistance": round(resistance,6)
+        }
+    return None
+
+# ---------- commands ----------
+@bot.message_handler(commands=["mode"])
+def cmd_mode(msg):
+    global MODE
+    chat = msg.chat.id
+    text = msg.text.strip().lower()
+    if "/mode" in text:
+        parts = text.split()
+        if len(parts) == 2 and parts[1] in THRESHOLDS:
+            MODE = parts[1]
+            bot.send_message(chat, f"Режим: {MODE}. Порог: {THRESHOLDS[MODE]}")
+            return
+    bot.send_message(chat, f"Поточний режим: {MODE}. Щоб змінити: /mode aggressive або /mode conservative")
+
+@bot.message_handler(commands=["signal","scan"])
+def cmd_signal(msg):
+    chat = msg.chat.id
+    bot.send_message(chat, f"🔎 Сканую (mode={MODE}) — перегляну до {MAX_ASSETS_PER_SCAN} активів з payout≥{int(PAYOUT_MIN*100)}% ...")
+    assets = ensure_assets()
+    candidates = [a for a in assets if a.get("payout",0) >= PAYOUT_MIN]
+    if not candidates:
+        bot.send_message(chat, "⚠️ В assets.json немає активів з payout>=threshold.")
         return
-
-    results = sorted(results, key=lambda x: x["score"], reverse=True)
-
-    msg = ""
-    for r in results:
-        msg += (
-            f"📌 {r['name']}\n"
-            f"🔔 СИГНАЛ: {r['trend']}\n"
-            f"💰 Виплата: {int(r['payout']*100)}%\n"
-            f"💵 Ціна: {r['price']}\n"
-            f"⭐ Потужність сигналу: {r['score']}/3\n"
-            f"📈 Підтвердження: {r['reasons']}\n"
-            f"⏱ Expiry: 5 хв\n\n"
+    candidates = candidates[:MAX_ASSETS_PER_SCAN]
+    res_list = []
+    for a in candidates:
+        sym = a["symbol"]
+        cache_key = f"ana_{sym}_{MODE}"
+        cached = cache_get(cache_key)
+        if cached:
+            res_list.append(cached); continue
+        res = analyze_one(sym, use_15m_confirm=THRESHOLDS[MODE]["USE_15M"])
+        if res:
+            res["display"] = a.get("display", sym)
+            res["payout"] = a.get("payout",0)
+            res_list.append(res)
+            cache_set(cache_key, res)
+        else:
+            cache_set(cache_key, None)
+        time.sleep(0.8)
+    if not res_list:
+        bot.send_message(chat, "❌ Немає сильних сигналів зараз. Спробуй пізніше або /mode aggressive")
+        return
+    res_list = sorted(res_list, key=lambda x: (x["strength"], x.get("payout",0)), reverse=True)
+    lines = []
+    for r in res_list[:5]:
+        lines.append(
+            f"📌 {r['display']} ({r['symbol']})\n"
+            f"🔔 {r['trend']}  |  Strength: {r['strength']}%\n"
+            f"💰 Payout: {int(r.get('payout',0)*100)}%  |  Price: {r['price']}\n"
+            f"📈 Reasons: {', '.join(r['reasons'])}\n"
+            f"🛑 S: {r['support']}  ▶ R: {r['resistance']}\n"
+            f"⏱ Expiry (info): {EXPIRY_MIN} min\n"
+            "—"
         )
+    bot.send_message(chat, "\n\n".join(lines))
 
-    bot.send_message(message.chat.id, msg)
+@bot.message_handler(commands=["help","start"])
+def cmd_help(msg):
+    chat = msg.chat.id
+    bot.send_message(chat,
+        "Тестер сигналів (інформаційно):\n"
+        "/signal — шукати сигнали\n"
+        "/mode <aggressive|conservative> — переключити режим\n"
+        "Режим conservative потребує 15m підтвердження (рідкіше, але якісніше)."
+    )
 
-bot.polling(none_stop=True)
+# ---------- run ----------
+if __name__ == "__main__":
+    print("Tester bot starting (strict filters).")
+    bot.infinity_polling(timeout=60, long_polling_timeout=60)
