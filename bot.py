@@ -189,12 +189,9 @@ def cmd_mode(msg):
 @bot.message_handler(commands=["signal","scan"])
 def cmd_signal(msg):
     chat = msg.chat.id
-    print(f"DEBUG: Command signal received for chat {chat}, mode {MODE}.")
     bot.send_message(chat, f"🔎 Scanning ({MODE})...")
     assets = ensure_assets()
     cand = [a for a in assets if a.get("payout",0) >= PAYOUT_MIN][:MAX_ASSETS_PER_SCAN]
-
-    print(f"DEBUG: Found {len(cand)} assets to scan.")
     
     if not cand:
         bot.send_message(chat, "No assets with enough payout.")
@@ -205,18 +202,14 @@ def cmd_signal(msg):
         ck = f"ana_{sym}_{MODE}"
         pc = cache_get(ck)
         if pc: results.append(pc); continue
-
-        print(f"DEBUG: Analyzing {sym}...")
         
         r = analyze_one(sym, THRESHOLDS[MODE]["USE_15M"])
         if r:
-            print(f"DEBUG: Signal found for {sym} (Strength: {r['strength']})")
             r['display'] = a.get('display', sym)
             r['payout'] = a.get('payout',0)
             results.append(r)
             cache_set(ck, r)
         else:
-            print(f"DEBUG: No strong signal for {sym}, skipping.")
             cache_set(ck, None)
         time.sleep(0.8)
     if not results:
