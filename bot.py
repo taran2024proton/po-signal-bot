@@ -252,17 +252,20 @@ def help_cmd(msg):
         "/mode <aggressive|conservative> — set mode\n"
     )
 
-# ---------------- WEBHOOK (FIXED) ----------------
+# ---------------- WEBHOOK (FIXED + FORCED DEBUG) ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_json(force=True)   # FIX: always parse JSON
-        print(f"DEBUG: Received webhook update.")
+        data = request.get_json(force=True)
+        # ПРИМУСОВИЙ ДРУК ДАНИХ, ЯКІ ПРИЙШЛИ:
+        print(f"WEBHOOK DATA: {data}") 
+        
         update = telebot.types.Update.de_json(json.dumps(data))
         bot.process_new_updates([update])
     except Exception as e:
-        print("Webhook error:", e)
+        print(f"Webhook error: {e}")
     return "OK", 200
+
 
 @app.route("/")
 def root():
