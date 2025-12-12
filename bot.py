@@ -9,8 +9,8 @@ import telebot
 from flask import Flask, request
 
 # ========== CONFIG ==========
-TOKEN = "<YOUR_TOKEN_HERE>"  # replace with your token
-WEBHOOK_URL = "<YOUR_RENDER_WEBHOOK_URL>"  # e.g. https://your-app.onrender.com/webhook
+TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"  # replace with your token
+WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com"  # e.g. https://your-app.onrender.com/webhook
 ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
 CACHE_SECONDS = 90
