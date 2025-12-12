@@ -257,9 +257,13 @@ def help_cmd(msg):
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = request.get_json(force=True)
-    bot.process_new_updates([telebot.types.Update.de_json(update)])
-    return "", 200
+    try:
+        data = request.get_data().decode("utf-8")
+        update = telebot.types.Update.de_json(data)
+        bot.process_new_updates([update])
+    except Exception as e:
+        print("WEBHOOK ERROR:", e)
+    return "OK", 200
 
 @app.route("/")
 def root():
