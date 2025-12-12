@@ -1,5 +1,5 @@
 # ===============================================================
-# main.py — Production version for Render (Webhook-only)
+# main.py — Stable Render Webhook Bot
 # ===============================================================
 
 import json
@@ -29,16 +29,13 @@ THRESHOLDS = {
     "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False}
 }
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(TOKEN, threaded=False)
 app = Flask(__name__)
 
 # ---------------- CACHE ----------------
 def load_cache():
-    p = Path(CACHE_FILE)
-    if not p.exists():
-        return {}
     try:
-        return json.loads(p.read_text(encoding="utf-8"))
+        return json.loads(Path(CACHE_FILE).read_text(encoding="utf-8"))
     except:
         return {}
 
@@ -51,19 +48,18 @@ def save_cache(c):
 cache = load_cache()
 
 def cache_get(key):
-    obj = cache.get(key)
-    if not obj:
+    if key not in cache:
         return None
-    ts = datetime.fromisoformat(obj["_ts"])
-    if datetime.utcnow() - ts > timedelta(seconds=CACHE_SECONDS):
+    try:
+        ts = datetime.fromisoformat(cache[key]["_ts"])
+        if datetime.utcnow() - ts > timedelta(seconds=CACHE_SECONDS):
+            return None
+        return cache[key]["data"]
+    except:
         return None
-    return obj["data"]
 
 def cache_set(key, data):
-    cache[key] = {
-        "_ts": datetime.utcnow().isoformat(),
-        "data": data
-    }
+    cache[key] = {"_ts": datetime.utcnow().isoformat(), "data": data}
     save_cache(cache)
 
 # ---------------- INDICATORS ----------------
@@ -95,8 +91,9 @@ def atr(df, period=14):
 
 # ---------------- ASSETS ----------------
 def ensure_assets():
-    p = Path(ASSETS_FILE)
-    if not p.exists():
+    try:
+        return json.loads(Path(ASSETS_FILE).read_text(encoding="utf-8"))
+    except:
         default = [
             {"symbol": "EURUSD=X", "display": "EUR/USD", "payout": 0.90},
             {"symbol": "GBPUSD=X", "display": "GBP/USD", "payout": 0.88},
@@ -105,16 +102,17 @@ def ensure_assets():
             {"symbol": "ETH-USD", "display": "ETH/USD", "payout": 0.91},
             {"symbol": "AUDUSD=X", "display": "AUD/USD", "payout": 0.87}
         ]
-        p.write_text(json.dumps(default, ensure_ascii=False, indent=2))
-    return json.loads(p.read_text(encoding="utf-8"))
+        Path(ASSETS_FILE).write_text(json.dumps(default, ensure_ascii=False, indent=2))
+        return default
 
 # ---------------- FETCH DATA ----------------
 def fetch_ohlcv(symbol, interval):
     key = f"{symbol}_{interval}"
-    c = cache_get(key)
-    if c:
+    cached = cache_get(key)
+
+    if cached:
         try:
-            return pd.read_json(c).set_index("Datetime")
+            return pd.read_json(cached).set_index("Datetime")
         except:
             pass
 
@@ -122,7 +120,6 @@ def fetch_ohlcv(symbol, interval):
         df = yf.download(symbol, period="3d", interval=interval, progress=False)
         if df is None or df.empty:
             return None
-
         js = df.reset_index().to_json(date_format="iso")
         cache_set(key, js)
         return df.reset_index().set_index("Datetime")
@@ -132,7 +129,7 @@ def fetch_ohlcv(symbol, interval):
 # ---------------- ANALYSIS ----------------
 def analyze(symbol, use_15m=True):
     df5 = fetch_ohlcv(symbol, "5m")
-    if df5 is None or len(df5) < 80:
+    if df5 is None or len(df5) < 100:
         return None
 
     df5 = df5.tail(300)
@@ -165,34 +162,31 @@ def analyze(symbol, use_15m=True):
 
     strength = min(100, score)
 
-    # 15M confirmation
     if use_15m:
         df15 = fetch_ohlcv(symbol, "15m")
         if df15 is None or len(df15) < 80:
             return None
-        e50_15 = ema(df15["Close"], 50).iloc[-1]
-        e200_15 = ema(df15["Close"], 200).iloc[-1]
-        trend15 = "BUY" if e50_15 > e200_15 else "SELL"
+        trend15 = "BUY" if ema(df15["Close"], 50).iloc[-1] > ema(df15["Close"], 200).iloc[-1] else "SELL"
         if trend15 != trend5:
             return None
 
     return {
         "symbol": symbol,
         "trend": trend5,
-        "price": round(price, 6),
+        "price": float(price),
         "strength": strength,
-        "support": round(support, 6),
-        "resistance": round(resist, 6)
+        "support": float(support),
+        "resistance": float(resist)
     }
 
-# ---------------- TELEGRAM COMMANDS ----------------
+# ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["mode"])
 def set_mode(msg):
     global MODE
     _, *rest = msg.text.split()
     if rest and rest[0] in THRESHOLDS:
         MODE = rest[0]
-        bot.send_message(msg.chat.id, f"Mode set to: {MODE}")
+        bot.send_message(msg.chat.id, f"Mode set to {MODE}")
     else:
         bot.send_message(msg.chat.id, f"Current mode: {MODE}")
 
@@ -213,6 +207,7 @@ def scan(msg):
     for a in valid:
         key = f"result_{a['symbol']}_{MODE}"
         cached = cache_get(key)
+
         if cached:
             results.append(cached)
             continue
@@ -258,11 +253,11 @@ def help_cmd(msg):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     try:
-        data = request.get_data().decode("utf-8")
-        update = telebot.types.Update.de_json(data)
+        raw = request.get_data().decode("utf-8")
+        update = telebot.types.Update.de_json(raw)
         bot.process_new_updates([update])
     except Exception as e:
-        print("WEBHOOK ERROR:", e)
+        print("Webhook error:", e)
     return "OK", 200
 
 @app.route("/")
