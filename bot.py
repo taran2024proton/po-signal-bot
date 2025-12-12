@@ -3,7 +3,7 @@ import yfinance as yf
 import numpy as np
 import time
 
-TOKEN = 8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs
+TOKEN = "8517986396:AAGCDudeHdGvs14rb9VsfHrakvjyOrTr_3c"
 
 bot = telebot.TeleBot(TOKEN)
 
