@@ -96,11 +96,6 @@ def ensure_assets():
     except:
         default = [
             {"symbol": "EURUSD=X", "display": "EUR/USD", "payout": 0.90},
-            {"symbol": "GBPUSD=X", "display": "GBP/USD", "payout": 0.88},
-            {"symbol": "USDJPY=X", "display": "USD/JPY", "payout": 0.86},
-            {"symbol": "BTC-USD", "display": "BTC/USD", "payout": 0.92},
-            {"symbol": "ETH-USD", "display": "ETH/USD", "payout": 0.91},
-            {"symbol": "AUDUSD=X", "display": "AUD/USD", "payout": 0.87}
         ]
         Path(ASSETS_FILE).write_text(json.dumps(default, ensure_ascii=False, indent=2))
         return default
