@@ -33,6 +33,9 @@ THRESHOLDS = {
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
 
+# === OTC ADD ===
+USER_MODE = {}  # chat_id -> MARKET | OTC
+
 # ---------------- CACHE ----------------
 def load_cache():
     try:
@@ -232,8 +235,27 @@ def analyze(symbol, use_15m):
     }
 
 # ---------------- COMMANDS ----------------
+@bot.message_handler(commands=["otc"])
+def otc_mode(msg):
+    USER_MODE[msg.chat.id] = "OTC"
+    bot.send_message(
+        msg.chat.id,
+        "⚠️ OTC MODE\n"
+        "📸 Надішли СКРІН графіка з Pocket Option\n"
+        "❗ Без скріна сигналів не буде"
+    )
+
+@bot.message_handler(commands=["market"])
+def market_mode(msg):
+    USER_MODE[msg.chat.id] = "MARKET"
+    bot.send_message(msg.chat.id, "✅ MARKET MODE активний")
+
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
+    if USER_MODE.get(msg.chat.id) == "OTC":
+        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
+        return
+
     bot.send_message(msg.chat.id, "🔍 Scanning market...")
 
     assets = get_assets()
@@ -272,15 +294,18 @@ def scan_cmd(msg):
 
     bot.send_message(msg.chat.id, "\n".join(out))
 
-@bot.message_handler(commands=["start", "help"])
-def help_cmd(msg):
+# === OTC ADD ===
+@bot.message_handler(content_types=["photo"])
+def otc_screen(msg):
+    if USER_MODE.get(msg.chat.id) != "OTC":
+        return
+
     bot.send_message(
         msg.chat.id,
-        "📡 Signal Bot\n"
-        "/signal — get signals\n"
-        "/scan — same as signal"
+        "📥 Скрін отримано\n"
+        "🔍 OTC аналіз...\n"
+        "❌ Сигналів поки немає"
     )
-
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
