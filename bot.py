@@ -1,5 +1,5 @@
 # ===============================================================
-# bot.py — STABLE FINAL VERSION (RENDER + TELEGRAM WEBHOOK)
+# bot.py — FINAL STABLE (RENDER + TELEGRAM + YFINANCE FIXED)
 # ===============================================================
 
 import json
@@ -98,7 +98,7 @@ def get_assets():
         Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
         return assets
 
-# ---------------- DATA ----------------
+# ---------------- DATA (🔥 FIXED) ----------------
 def fetch(symbol, interval):
     key = f"{symbol}_{interval}"
     cached = cache_get(key)
@@ -114,6 +114,15 @@ def fetch(symbol, interval):
     )
 
     if df is None or df.empty:
+        return None
+
+    # 🔥 FIX MULTIINDEX COLUMNS
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    required = {"Open", "High", "Low", "Close"}
+    if not required.issubset(df.columns):
+        print(f"⚠️ Missing OHLC for {symbol} {interval}")
         return None
 
     df = df.reset_index()
