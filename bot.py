@@ -275,7 +275,10 @@ def otc_analyze(candles):
     def rng(c): return c["low"] - c["high"]
 
     close_prices = pd.Series([c["close"] for c in candles])
-    rsi = rsi_last(close_prices, period=14)
+    rsi = rsi_last(close_prices, period=10)
+
+    period_bb = 10
+    sma = close_prices.rolling(window=period_bb).mean().iloc[-1]
     
     impulse = []
     for c in candles[-20:-10]:
@@ -298,12 +301,16 @@ def otc_analyze(candles):
     breakout = candles[-2]
 
     if direction == "PUT" and breakout["close"] > support:
-        if rsi > 50:
+        if rsi > 52:
+            return None
+        if close_prices.iloc[-1] > sma:
             return None
         return "PUT"
 
     if direction == "CALL" and breakout["close"] < resistance:
-        if rsi < 50:
+        if rsi < 48:
+            return None
+        if close_prices.iloc[-1] < sma:
             return None
         return "CALL"
 
