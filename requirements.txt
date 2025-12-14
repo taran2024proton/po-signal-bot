@@ -6,3 +6,4 @@ pyTelegramBotAPI
 Flask
 pillow
 opencv-python-headless
+gunicorn
