@@ -16,6 +16,8 @@ import cv2
 import numpy as np
 from PIL import Image
 
+import io
+
 # ---------------- CONFIG ----------------
 TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
 WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com/webhook"
