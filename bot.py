@@ -6,6 +6,7 @@ import json
 import time
 from pathlib import Path
 from datetime import datetime, timedelta, UTC
+import io
 
 import yfinance as yf
 import pandas as pd
@@ -15,8 +16,6 @@ from flask import Flask, request
 import cv2
 import numpy as np
 from PIL import Image
-
-import io
 
 # ---------------- CONFIG ----------------
 TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
@@ -251,7 +250,7 @@ def extract_candles_from_image(image_bytes, count=25):
     
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
-        if h > w * 2 and h > 20:
+        if h > w * 2 and h > 25:
             candles.append((x, y, w, h))
 
     candles = sorted(candles, key=lambda x: x[0])[-count:]
@@ -268,59 +267,38 @@ def extract_candles_from_image(image_bytes, count=25):
     return out
 
 def otc_analyze(candles):
-    if len(candles) < 20:
-        print("DEBUG: OTC signal skipped: Not enough candles (<20)")
+    if len(candles) < 15:
+        print("DEBUG OTC: мало свічок")
         return None
         
     def body(c): return abs(c["close"] - c["open"])
-    def rng(c): return c["low"] - c["high"]
+    def direction(c): return "UP" if c["close"] < c["open"] else "DOWN"
 
-    close_prices = pd.Series([c["close"] for c in candles])
-    rsi = rsi_last(close_prices, period=10)
+    recent = candles[-10:]
+    dirs = [direction(c) for c in recent]
+    bodies = [body(c) for c in recent]
 
-    period_bb = 10
-    sma = close_prices.rolling(window=period_bb).mean().iloc[-1]
-    
-    impulse = []
-    for c in candles[-20:-10]:
-        if rng(c) > 0 and body(c) / rng(c) > 0.4:
-            impulse.append(c)
+    avg_body = sum(bodies[:-1]) / len(bodies[:-1])
 
-    if len(impulse) < 2:
-        print(f"DEBUG: OTC signal skipped: Not enough impulse candles found ({len(impulse)}<2)")
-        return None
-        
-    direction = "ПРОДАТИ" if impulse[-1]["close"] > impulse[-1]["open"] else "КУПИТИ"
-    
-    compression = candles[-10:-3]
-    bodies = [body(c) for c in compression]
+    # ПРОДОВЖЕННЯ ТРЕНДУ
+    if dirs.count("UP") >= 6 and bodies[-1] > avg_body * 1.2:
+        print("DEBUG OTC: BUY continuation")
+        return "КУПИТИ"
 
-    if max(bodies) > sum(bodies) / len(bodies) * 1.6:
-        print("DEBUG: OTC signal skipped: Too much volatility in compression zone")
-        return None
-
-    support = min(c["low"] for c in compression)
-    resistance = max(c["high"] for c in compression)
-    breakout = candles[-2]
-
-    if direction == "ПРОДАТИ" and breakout["close"] > support:
-        if rsi > 52:
-            print(f"DEBUG: OTC signal skipped (PUT): RSI too high ({rsi})")
-            return None
-        if close_prices.iloc[-1] > sma:
-            print(f"DEBUG: OTC signal skipped (PUT): Price above SMA ({sma})")
-            return None
+    if dirs.count("DOWN") >= 6 and bodies[-1] > avg_body * 1.2:
+        print("DEBUG OTC: SELL continuation")
         return "ПРОДАТИ"
 
-    if direction == "КУПИТИ" and breakout["close"] < resistance:
-        if rsi < 48:
-            print(f"DEBUG: OTC signal skipped (CALL): RSI too low ({rsi})")
-            return None
-        if close_prices.iloc[-1] < sma:
-            print(f"DEBUG: OTC signal skipped (CALL): Price below SMA ({sma})")
-            return None
-        return "КУПИТИ"
-        
+    # ВІДБІЙ
+    if bodies[-1] < bodies[-2] * 0.5:
+        if dirs[-2] == "UP":
+            print("DEBUG OTC: SELL rejection")
+            return "ПРОДАТИ"
+        if dirs[-2] == "DOWN":
+            print("DEBUG OTC: BUY rejection")
+            return "КУПИТИ"
+
+    print("DEBUG OTC: умов недостатньо")
     return None
 
 # ---------------- COMMANDS ----------------
@@ -354,7 +332,7 @@ def scan_cmd(msg):
 
         res = analyze(a["symbol"], use_15m)
         if res and res["strength"] >= min_strength:
-            results.append(a["display"] + " " + res["trend"])
+            results.append(res)
 
         time.sleep(1)
 
@@ -362,14 +340,11 @@ def scan_cmd(msg):
         bot.send_message(msg.chat.id, "❌ No strong signals right now")
         return
 
-    results.sort(key=lambda x: x["strength"], reverse=True)
-
     out = []
     for r in results:
         out.append(
-            f"📌 <b>{r['display']}</b>\n"
+            f"📌 <b>{r['symbol']}</b>\n"
             f"🔔 {r['trend']} | {r['strength']}%\n"
-            f"💰 Payout {int(r['payout']*100)}%\n"
             f"⏱ Expiry {EXPIRY_MIN} min\n"
             f"—"
         )
@@ -402,6 +377,7 @@ def otc_screen(msg):
         f"⏱ Експірація 1 хв\n"
         f"⚠️ Ризик: СЕРЕДНІЙ"
     )
+    
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
@@ -417,7 +393,6 @@ def root():
 if __name__ == "__main__":
     import os 
     port = int(os.environ.get("PORT", 5000))
-    
     bot.delete_webhook()
     bot.set_webhook(WEBHOOK_URL)
     app.run(host="0.0.0.0", port=port)
