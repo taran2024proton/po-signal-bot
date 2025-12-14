@@ -93,7 +93,7 @@ def atr_last(df, period=14):
     lc = (df["Low"] - df["Close"].shift()).abs()
     tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
     return tr.rolling(period).mean().iloc[-1]
-
+    
 # ---------------- ASSETS ----------------
 def get_assets():
     try:
@@ -178,11 +178,6 @@ def fetch(symbol, interval):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(df.columns):
-        print(f"⚠️ Missing OHLC for {symbol} {interval}")
-        return None
-
     df = df.reset_index()
     cache_set(key, df.to_json(date_format="iso"))
     return df
@@ -204,9 +199,6 @@ def analyze(symbol, use_15m):
     macd = macd_hist_last(close)
     atr = atr_last(df5)
 
-    if atr == 0 or pd.isna(atr):
-        return None
-
     support = float(df5["Low"].tail(60).min())
     resistance = float(df5["High"].tail(60).max())
 
@@ -217,8 +209,6 @@ def analyze(symbol, use_15m):
     if trend == "SELL" and macd < 0: score += 20
     if trend == "BUY" and abs(price - support) < atr * 1.2: score += 20
     if trend == "SELL" and abs(price - resistance) < atr * 1.2: score += 20
-
-    strength = min(score, 100)
 
     if use_15m:
         df15 = fetch(symbol, "15m")
@@ -231,32 +221,27 @@ def analyze(symbol, use_15m):
     return {
         "symbol": symbol,
         "trend": trend,
-        "price": price,
-        "strength": strength,
-        "support": support,
-        "resistance": resistance,
+        "strength": min(score, 100),
     }
 
 # ================= OTC SCREEN ANALYSIS =================
-import time
-start = time.time()
-
 def extract_candles_from_image(image_bytes, count=25):
-    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
-    img = np.array(img)
+    start = time.time()
+
+    img = np.array(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     edges = cv2.Canny(gray, 50, 150)
 
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     candles = []
-    
+
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
         if h > w * 2 and h > 25:
             candles.append((x, y, w, h))
 
     candles = sorted(candles, key=lambda x: x[0])[-count:]
-    
+
     out = []
     for x, y, w, h in candles:
         out.append({
@@ -265,17 +250,17 @@ def extract_candles_from_image(image_bytes, count=25):
             "high": y,
             "low": y + h
         })
- if time.time() - start > 3:
-    print("DEBUG OTC: CV timeout")
-    return []
-     
+
+    if time.time() - start > 3:
+        print("DEBUG OTC: CV timeout")
+        return []
+
     return out
 
 def otc_analyze(candles):
     if len(candles) < 15:
-        print("DEBUG OTC: мало свічок")
         return None
-        
+
     def body(c): return abs(c["close"] - c["open"])
     def direction(c): return "UP" if c["close"] < c["open"] else "DOWN"
 
@@ -283,88 +268,38 @@ def otc_analyze(candles):
     dirs = [direction(c) for c in recent]
     bodies = [body(c) for c in recent]
 
-    avg_body = sum(bodies[:-1]) / len(bodies[:-1])
+    avg = sum(bodies[:-1]) / len(bodies[:-1])
 
-    # ПРОДОВЖЕННЯ ТРЕНДУ
-    if dirs.count("UP") >= 6 and bodies[-1] > avg_body * 1.2:
-        print("DEBUG OTC: BUY continuation")
+    # CONTINUATION
+    if dirs.count("UP") >= 6 and bodies[-1] > avg * 1.2:
         return "КУПИТИ"
-
-    if dirs.count("DOWN") >= 6 and bodies[-1] > avg_body * 1.2:
-        print("DEBUG OTC: SELL continuation")
+    if dirs.count("DOWN") >= 6 and bodies[-1] > avg * 1.2:
         return "ПРОДАТИ"
 
-    # ВІДБІЙ
+    # REJECTION
     if bodies[-1] < bodies[-2] * 0.5:
-        if dirs[-2] == "UP":
-            print("DEBUG OTC: SELL rejection")
-            return "ПРОДАТИ"
-        if dirs[-2] == "DOWN":
-            print("DEBUG OTC: BUY rejection")
-            return "КУПИТИ"
+        return "ПРОДАТИ" if dirs[-2] == "UP" else "КУПИТИ"
 
-    print("DEBUG OTC: умов недостатньо")
     return None
 
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
     USER_MODE[msg.chat.id] = "OTC"
-    bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
+    bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли скрін з Pocket Option")
 
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
     bot.send_message(msg.chat.id, "✅ MARKET MODE")
 
-@bot.message_handler(commands=["signal", "scan"])
-def scan_cmd(msg):
-    if USER_MODE.get(msg.chat.id) == "OTC":
-        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
-        return
-
-    bot.send_message(msg.chat.id, "🔍 Scanning market...")
-
-    assets = get_assets()
-    use_15m = THRESHOLDS[MODE]["USE_15M"]
-    min_strength = THRESHOLDS[MODE]["MIN_STRENGTH"]
-
-    results = []
-
-    for a in assets[:MAX_ASSETS]:
-        if a["payout"] < PAYOUT_MIN:
-            continue
-
-        res = analyze(a["symbol"], use_15m)
-        if res and res["strength"] >= min_strength:
-            results.append(res)
-
-        time.sleep(1)
-
-    if not results:
-        bot.send_message(msg.chat.id, "❌ No strong signals right now")
-        return
-
-    out = []
-    for r in results:
-        out.append(
-            f"📌 <b>{r['symbol']}</b>\n"
-            f"🔔 {r['trend']} | {r['strength']}%\n"
-            f"⏱ Expiry {EXPIRY_MIN} min\n"
-            f"—"
-        )
-
-    bot.send_message(msg.chat.id, "\n".join(out))
-
-# === OTC ADD ===
 @bot.message_handler(content_types=["photo"])
 def otc_screen(msg):
     if USER_MODE.get(msg.chat.id) != "OTC":
         return
 
     file_id = msg.photo[-1].file_id
-    file_info = bot.get_file(file_id)
-    image_bytes = bot.download_file(file_info.file_path)
+    image_bytes = bot.download_file(bot.get_file(file_id).file_path)
 
     bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 OTC аналіз...")
 
@@ -378,8 +313,8 @@ def otc_screen(msg):
     bot.send_message(
         msg.chat.id,
         f"🔥 <b>OTC SIGNAL</b>\n"
-        f"📊 {signal}\n"
-        f"⏱ Експірація 1 хв\n"
+        f"{signal}\n"
+        f"⏱ Експірація: 1 хв\n"
         f"⚠️ Ризик: СЕРЕДНІЙ"
     )
     
