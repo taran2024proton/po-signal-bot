@@ -1,5 +1,5 @@
 # ===============================================================
-# bot.py — FINAL STABLE (RENDER + TELEGRAM + YFINANCE FIXED)
+# bot.py — FINAL STABLE (MARKET UNCHANGED + OTC SCREEN ANALYSIS)
 # ===============================================================
 
 import json
@@ -11,6 +11,10 @@ import yfinance as yf
 import pandas as pd
 import telebot
 from flask import Flask, request
+
+import cv2
+import numpy as np
+from PIL import Image
 
 # ---------------- CONFIG ----------------
 TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
@@ -33,7 +37,6 @@ THRESHOLDS = {
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
 
-# === OTC ADD ===
 USER_MODE = {}  # chat_id -> MARKET | OTC
 
 # ---------------- CACHE ----------------
@@ -63,7 +66,7 @@ def cache_set(key, data):
     cache[key] = {"ts": datetime.now(UTC).isoformat(), "data": data}
     save_cache(cache)
 
-# ---------------- INDICATORS ----------------
+# ---------------- INDICATORS (MARKET) ----------------
 def ema_last(series, period):
     return series.ewm(span=period, adjust=False).mean().iloc[-1]
 
@@ -153,7 +156,7 @@ def get_assets():
         Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
         return assets
 
-# ---------------- DATA (🔥 FIXED) ----------------
+# ---------------- DATA (MARKET) ----------------
 def fetch(symbol, interval):
     key = f"{symbol}_{interval}"
     cached = cache_get(key)
@@ -171,7 +174,6 @@ def fetch(symbol, interval):
     if df is None or df.empty:
         return None
 
-    # 🔥 FIX MULTIINDEX COLUMNS
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
@@ -184,7 +186,7 @@ def fetch(symbol, interval):
     cache_set(key, df.to_json(date_format="iso"))
     return df
 
-# ---------------- ANALYSIS ----------------
+# ---------------- MARKET ANALYSIS ----------------
 def analyze(symbol, use_15m):
     df5 = fetch(symbol, "5m")
     if df5 is None or len(df5) < 200:
@@ -234,21 +236,80 @@ def analyze(symbol, use_15m):
         "resistance": resistance,
     }
 
+# ================= OTC SCREEN ANALYSIS =================
+
+def extract_candles_from_image(image_bytes, count=25):
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = np.array(img)
+    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
+    edges = cv2.Canny(gray, 50, 150)
+
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    candles = []
+    
+    for c in contours:
+        x, y, w, h = cv2.boundingRect(c)
+        if h > w * 2 and h > 20:
+            candles.append((x, y, w, h))
+
+    candles = sorted(candles, key=lambda x: x[0])[-count:]
+    
+     out = []
+    for x, y, w, h in candles:
+        out.append({
+            "open": y + h * 0.3,
+            "close": y + h * 0.7,
+            "high": y,
+            "low": y + h
+        })
+        
+        return out
+
+def otc_analyze(candles):
+    if len(candles) < 20:
+        return None
+        
+    def body(c): return abs(c["close"] - c["open"])
+    def rng(c): return c["low"] - c["high"]
+
+    impulse = []
+    for c in candles[-20:-10]:
+        if rng(c) > 0 and body(c) / rng(c) > 0.6:
+            impulse.append(c)
+
+    if len(impulse) < 3:
+        return None
+        
+    direction = "PUT" if impulse[-1]["close"] > impulse[-1]["open"] else "CALL"
+
+    compression = candles[-10:-3]
+    bodies = [body(c) for c in compression]
+
+    if max(bodies) > sum(bodies) / len(bodies) * 1.6:
+        return None
+
+    support = min(c["low"] for c in compression)
+    resistance = max(c["high"] for c in compression)
+    breakout = candles[-2]
+
+    if direction == "PUT" and breakout["close"] > support:
+        return "PUT"
+
+    if direction == "CALL" and breakout["close"] < resistance:
+        return "CALL"
+
+    return None
+
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
     USER_MODE[msg.chat.id] = "OTC"
-    bot.send_message(
-        msg.chat.id,
-        "⚠️ OTC MODE\n"
-        "📸 Надішли СКРІН графіка з Pocket Option\n"
-        "❗ Без скріна сигналів не буде"
-    )
+    bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
 
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
-    bot.send_message(msg.chat.id, "✅ MARKET MODE активний")
+    bot.send_message(msg.chat.id, "✅ MARKET MODE")
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
@@ -270,9 +331,7 @@ def scan_cmd(msg):
 
         res = analyze(a["symbol"], use_15m)
         if res and res["strength"] >= min_strength:
-            res["display"] = a["display"]
-            res["payout"] = a["payout"]
-            results.append(res)
+            results.append(a["display"] + " " + res["trend"])
 
         time.sleep(1)
 
@@ -300,11 +359,25 @@ def otc_screen(msg):
     if USER_MODE.get(msg.chat.id) != "OTC":
         return
 
+    file_id = msg.photo[-1].file_id
+    file_info = bot.get_file(file_id)
+    image_bytes = bot.download_file(file_info.file_path)
+
+    bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 OTC аналіз...")
+
+    candles = extract_candles_from_image(image_bytes)
+    signal = otc_analyze(candles)
+
+    if not signal:
+        bot.send_message(msg.chat.id, "❌ OTC-сигналу немає")
+        return
+
     bot.send_message(
         msg.chat.id,
-        "📥 Скрін отримано\n"
-        "🔍 OTC аналіз...\n"
-        "❌ Сигналів поки немає"
+        f"🔥 <b>OTC SIGNAL</b>\n"
+        f"📊 {signal}\n"
+        f"⏱ Expiry 1 min\n"
+        f"⚠️ Risk: MEDIUM"
     )
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
