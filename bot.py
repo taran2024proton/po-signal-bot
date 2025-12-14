@@ -269,6 +269,7 @@ def extract_candles_from_image(image_bytes, count=25):
 
 def otc_analyze(candles):
     if len(candles) < 20:
+        print("DEBUG: OTC signal skipped: Not enough candles (<20)")
         return None
         
     def body(c): return abs(c["close"] - c["open"])
@@ -286,6 +287,7 @@ def otc_analyze(candles):
             impulse.append(c)
 
     if len(impulse) < 3:
+        print(f"DEBUG: OTC signal skipped: Not enough impulse candles found ({len(impulse)}<3)")
         return None
         
     direction = "PUT" if impulse[-1]["close"] > impulse[-1]["open"] else "CALL"
@@ -294,6 +296,7 @@ def otc_analyze(candles):
     bodies = [body(c) for c in compression]
 
     if max(bodies) > sum(bodies) / len(bodies) * 1.6:
+        print("DEBUG: OTC signal skipped: Too much volatility in compression zone")
         return None
 
     support = min(c["low"] for c in compression)
@@ -302,18 +305,22 @@ def otc_analyze(candles):
 
     if direction == "PUT" and breakout["close"] > support:
         if rsi > 52:
+            print(f"DEBUG: OTC signal skipped (PUT): RSI too high ({rsi})")
             return None
         if close_prices.iloc[-1] > sma:
+            print(f"DEBUG: OTC signal skipped (PUT): Price above SMA ({sma})")
             return None
         return "PUT"
 
     if direction == "CALL" and breakout["close"] < resistance:
         if rsi < 48:
+            print(f"DEBUG: OTC signal skipped (CALL): RSI too low ({rsi})")
             return None
         if close_prices.iloc[-1] < sma:
+            print(f"DEBUG: OTC signal skipped (CALL): Price below SMA ({sma})")
             return None
         return "CALL"
-
+        
     return None
 
 # ---------------- COMMANDS ----------------
