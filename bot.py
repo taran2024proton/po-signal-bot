@@ -274,6 +274,9 @@ def otc_analyze(candles):
     def body(c): return abs(c["close"] - c["open"])
     def rng(c): return c["low"] - c["high"]
 
+    close_prices = pd.Series([c["close"] for c in candles])
+    rsi = rsi_last(close_prices, period=14)
+    
     impulse = []
     for c in candles[-20:-10]:
         if rng(c) > 0 and body(c) / rng(c) > 0.6:
@@ -295,9 +298,13 @@ def otc_analyze(candles):
     breakout = candles[-2]
 
     if direction == "PUT" and breakout["close"] > support:
+        if rsi > 50:
+            return None
         return "PUT"
 
     if direction == "CALL" and breakout["close"] < resistance:
+        if rsi < 50:
+            return None
         return "CALL"
 
     return None
