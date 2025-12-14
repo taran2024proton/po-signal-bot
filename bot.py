@@ -290,8 +290,8 @@ def otc_analyze(candles):
         print(f"DEBUG: OTC signal skipped: Not enough impulse candles found ({len(impulse)}<2)")
         return None
         
-    direction = "PUT" if impulse[-1]["close"] > impulse[-1]["open"] else "CALL"
-
+    direction = "ПРОДАТИ" if impulse[-1]["close"] > impulse[-1]["open"] else "КУПИТИ"
+    
     compression = candles[-10:-3]
     bodies = [body(c) for c in compression]
 
@@ -303,23 +303,23 @@ def otc_analyze(candles):
     resistance = max(c["high"] for c in compression)
     breakout = candles[-2]
 
-    if direction == "PUT" and breakout["close"] > support:
+    if direction == "ПРОДАТИ" and breakout["close"] > support:
         if rsi > 52:
             print(f"DEBUG: OTC signal skipped (PUT): RSI too high ({rsi})")
             return None
         if close_prices.iloc[-1] > sma:
             print(f"DEBUG: OTC signal skipped (PUT): Price above SMA ({sma})")
             return None
-        return "PUT"
+        return "ПРОДАТИ"
 
-    if direction == "CALL" and breakout["close"] < resistance:
+    if direction == "КУПИТИ" and breakout["close"] < resistance:
         if rsi < 48:
             print(f"DEBUG: OTC signal skipped (CALL): RSI too low ({rsi})")
             return None
         if close_prices.iloc[-1] < sma:
             print(f"DEBUG: OTC signal skipped (CALL): Price below SMA ({sma})")
             return None
-        return "CALL"
+        return "КУПИТИ"
         
     return None
 
@@ -399,8 +399,8 @@ def otc_screen(msg):
         msg.chat.id,
         f"🔥 <b>OTC SIGNAL</b>\n"
         f"📊 {signal}\n"
-        f"⏱ Expiry 1 min\n"
-        f"⚠️ Risk: MEDIUM"
+        f"⏱ Експірація 1 хв\n"
+        f"⚠️ Ризик: СЕРЕДНІЙ"
     )
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
