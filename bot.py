@@ -254,7 +254,7 @@ def extract_candles_from_image(image_bytes, count=25):
 
     candles = sorted(candles, key=lambda x: x[0])[-count:]
     
-     out = []
+    out = []
     for x, y, w, h in candles:
         out.append({
             "open": y + h * 0.3,
