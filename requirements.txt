@@ -4,3 +4,5 @@ pandas
 numpy
 pyTelegramBotAPI
 Flask
+pillow
+opencv-python-headless
