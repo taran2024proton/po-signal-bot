@@ -265,7 +265,7 @@ def extract_candles_from_image(image_bytes, count=25):
             "low": y + h
         })
         
-        return out
+    return out
 
 def otc_analyze(candles):
     if len(candles) < 20:
