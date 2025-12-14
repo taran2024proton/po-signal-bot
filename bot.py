@@ -35,7 +35,7 @@ THRESHOLDS = {
     "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False},
 }
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=True)
 app = Flask(__name__)
 
 USER_MODE = {}  # chat_id -> MARKET | OTC
@@ -238,6 +238,8 @@ def analyze(symbol, use_15m):
     }
 
 # ================= OTC SCREEN ANALYSIS =================
+import time
+start = time.time()
 
 def extract_candles_from_image(image_bytes, count=25):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
@@ -263,7 +265,10 @@ def extract_candles_from_image(image_bytes, count=25):
             "high": y,
             "low": y + h
         })
-        
+ if time.time() - start > 3:
+    print("DEBUG OTC: CV timeout")
+    return []
+     
     return out
 
 def otc_analyze(candles):
