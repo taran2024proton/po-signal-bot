@@ -283,7 +283,7 @@ def otc_analyze(candles):
     
     impulse = []
     for c in candles[-20:-10]:
-        if rng(c) > 0 and body(c) / rng(c) > 0.5:
+        if rng(c) > 0 and body(c) / rng(c) > 0.4:
             impulse.append(c)
 
     if len(impulse) < 2:
