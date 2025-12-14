@@ -286,8 +286,8 @@ def otc_analyze(candles):
         if rng(c) > 0 and body(c) / rng(c) > 0.6:
             impulse.append(c)
 
-    if len(impulse) < 3:
-        print(f"DEBUG: OTC signal skipped: Not enough impulse candles found ({len(impulse)}<3)")
+    if len(impulse) < 2:
+        print(f"DEBUG: OTC signal skipped: Not enough impulse candles found ({len(impulse)}<2)")
         return None
         
     direction = "PUT" if impulse[-1]["close"] > impulse[-1]["open"] else "CALL"
