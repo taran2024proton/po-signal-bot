@@ -394,4 +394,4 @@ def root():
 if __name__ == "__main__":
     bot.delete_webhook()
     bot.set_webhook(WEBHOOK_URL)
-    app.run(host="0.0.0.0", port=10000)
+    app.run(host="0.0.0.0", port=port)
