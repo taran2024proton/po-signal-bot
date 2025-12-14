@@ -178,6 +178,11 @@ def fetch(symbol, interval):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
+    required = {"Open", "High", "Low", "Close"} 
+    if not required.issubset(df.columns): 
+        print(f"⚠️ Missing OHLC for {symbol} {interval}") 
+        return None
+
     df = df.reset_index()
     cache_set(key, df.to_json(date_format="iso"))
     return df
@@ -199,6 +204,9 @@ def analyze(symbol, use_15m):
     macd = macd_hist_last(close)
     atr = atr_last(df5)
 
+    if atr == 0 or pd.isna(atr): 
+        return None
+
     support = float(df5["Low"].tail(60).min())
     resistance = float(df5["High"].tail(60).max())
 
@@ -209,6 +217,8 @@ def analyze(symbol, use_15m):
     if trend == "SELL" and macd < 0: score += 20
     if trend == "BUY" and abs(price - support) < atr * 1.2: score += 20
     if trend == "SELL" and abs(price - resistance) < atr * 1.2: score += 20
+
+    strength = min(score, 100)
 
     if use_15m:
         df15 = fetch(symbol, "15m")
@@ -221,14 +231,16 @@ def analyze(symbol, use_15m):
     return {
         "symbol": symbol,
         "trend": trend,
-        "strength": min(score, 100),
+        "price": price,
+        "strength": strength,
+        "support": support,
+        "resistance": resistance,
     }
 
 # ================= OTC SCREEN ANALYSIS =================
 def extract_candles_from_image(image_bytes, count=25):
-    start = time.time()
-
-    img = np.array(Image.open(io.BytesIO(image_bytes)).convert("RGB"))
+    img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
+    img = np.array(img)
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     edges = cv2.Canny(gray, 50, 150)
 
@@ -250,56 +262,127 @@ def extract_candles_from_image(image_bytes, count=25):
             "high": y,
             "low": y + h
         })
-
-    if time.time() - start > 3:
-        print("DEBUG OTC: CV timeout")
-        return []
-
+        
     return out
 
 def otc_analyze(candles):
-    if len(candles) < 15:
+    if len(candles) < 20:
+        print("DEBUG: OTC signal skipped: Not enough candles (<20)")
+        return None
+        
+    def body(c): return abs(c["close"] - c["open"])
+    def rng(c): return c["low"] - c["high"]
+
+    close_prices = pd.Series([c["close"] for c in candles])
+    rsi = rsi_last(close_prices, period=10)
+
+    period_bb = 10
+    sma = close_prices.rolling(window=period_bb).mean().iloc[-1]
+    
+    impulse = []
+    for c in candles[-20:-10]:
+        if rng(c) > 0 and body(c) / rng(c) > 0.4:
+            impulse.append(c)
+
+    if len(impulse) < 2:
+        print(f"DEBUG: OTC signal skipped: Not enough impulse candles found ({len(impulse)}<2)")
+        return None
+        
+    direction = "ПРОДАТИ" if impulse[-1]["close"] > impulse[-1]["open"] else "КУПИТИ"
+    
+    compression = candles[-10:-3]
+    bodies = [body(c) for c in compression]
+
+    if max(bodies) > sum(bodies) / len(bodies) * 1.6:
+        print("DEBUG: OTC signal skipped: Too much volatility in compression zone")
         return None
 
-    def body(c): return abs(c["close"] - c["open"])
-    def direction(c): return "UP" if c["close"] < c["open"] else "DOWN"
+    support = min(c["low"] for c in compression)
+    resistance = max(c["high"] for c in compression)
+    breakout = candles[-2]
 
-    recent = candles[-10:]
-    dirs = [direction(c) for c in recent]
-    bodies = [body(c) for c in recent]
-
-    avg = sum(bodies[:-1]) / len(bodies[:-1])
-
-    # CONTINUATION
-    if dirs.count("UP") >= 6 and bodies[-1] > avg * 1.2:
-        return "КУПИТИ"
-    if dirs.count("DOWN") >= 6 and bodies[-1] > avg * 1.2:
+    if direction == "ПРОДАТИ" and breakout["close"] > support:
+        if rsi > 52:
+            print(f"DEBUG: OTC signal skipped (PUT): RSI too high ({rsi})")
+            return None
+        if close_prices.iloc[-1] > sma:
+            print(f"DEBUG: OTC signal skipped (PUT): Price above SMA ({sma})")
+            return None
         return "ПРОДАТИ"
 
-    # REJECTION
-    if bodies[-1] < bodies[-2] * 0.5:
-        return "ПРОДАТИ" if dirs[-2] == "UP" else "КУПИТИ"
-
+    if direction == "КУПИТИ" and breakout["close"] < resistance:
+        if rsi < 48:
+            print(f"DEBUG: OTC signal skipped (CALL): RSI too low ({rsi})")
+            return None
+        if close_prices.iloc[-1] < sma:
+            print(f"DEBUG: OTC signal skipped (CALL): Price below SMA ({sma})")
+            return None
+        return "КУПИТИ"
+        
     return None
 
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
     USER_MODE[msg.chat.id] = "OTC"
-    bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли скрін з Pocket Option")
+    bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
 
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
     bot.send_message(msg.chat.id, "✅ MARKET MODE")
 
+@bot.message_handler(commands=["signal", "scan"])
+def scan_cmd(msg):
+    if USER_MODE.get(msg.chat.id) == "OTC":
+        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
+        return
+
+    bot.send_message(msg.chat.id, "🔍 Scanning market...")
+
+    assets = get_assets()
+    use_15m = THRESHOLDS[MODE]["USE_15M"]
+    min_strength = THRESHOLDS[MODE]["MIN_STRENGTH"]
+
+    results = []
+
+    for a in assets[:MAX_ASSETS]:
+        if a["payout"] < PAYOUT_MIN:
+            continue
+
+        res = analyze(a["symbol"], use_15m)
+        if res and res["strength"] >= min_strength:
+            results.append(a["display"] + " " + res["trend"])
+
+        time.sleep(1)
+
+    if not results:
+        bot.send_message(msg.chat.id, "❌ No strong signals right now")
+        return
+
+    results.sort(key=lambda x: x["strength"], reverse=True)
+
+    out = []
+    for r in results:
+        out.append(
+            f"📌 <b>{r['display']}</b>\n"
+            f"🔔 {r['trend']} | {r['strength']}%\n"
+            f"💰 Payout {int(r['payout']*100)}%\n"
+            f"⏱ Expiry {EXPIRY_MIN} min\n"
+            f"—"
+        )
+
+    bot.send_message(msg.chat.id, "\n".join(out))
+
+# === OTC ADD ===
 @bot.message_handler(content_types=["photo"])
 def otc_screen(msg):
     if USER_MODE.get(msg.chat.id) != "OTC":
         return
 
     file_id = msg.photo[-1].file_id
-    image_bytes = bot.download_file(bot.get_file(file_id).file_path)
+    file_info = bot.get_file(file_id)
+    image_bytes = bot.download_file(file_info.file_path)
 
     bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 OTC аналіз...")
 
@@ -313,8 +396,8 @@ def otc_screen(msg):
     bot.send_message(
         msg.chat.id,
         f"🔥 <b>OTC SIGNAL</b>\n"
-        f"{signal}\n"
-        f"⏱ Експірація: 1 хв\n"
+        f"📊 {signal}\n"
+        f"⏱ Експірація 1 хв\n"
         f"⚠️ Ризик: СЕРЕДНІЙ"
     )
     
