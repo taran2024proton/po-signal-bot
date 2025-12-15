@@ -3,9 +3,9 @@
 # ===============================================================
 
 import json
-import time
+import threading
 from pathlib import Path
-from datetime import datetime, timedelta, UTC
+from datetime import datetime, timedelta, timezone
 import io
 
 import yfinance as yf
@@ -31,6 +31,8 @@ THRESHOLDS = {
     "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False},
 }
 
+UTC = timezone.utc
+
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=True)
 app = Flask(__name__)
 
@@ -54,7 +56,10 @@ cache = load_cache()
 def cache_get(key):
     if key not in cache:
         return None
-    ts = datetime.fromisoformat(cache[key]["ts"])
+    try:
+        ts = datetime.fromisoformat(cache[key]["ts"])
+    except Exception:
+        return None
     if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
         return None
     return cache[key]["data"]
@@ -94,7 +99,7 @@ def atr_last(df, period=14):
 def get_assets():
     try:
         return json.loads(Path(ASSETS_FILE).read_text())
-    except:
+    except Exception:
         assets = [
             {"symbol":"GBPJPY=X","display":"GBP/JPY","payout":0.87},
             {"symbol":"AUDCAD=X","display":"AUD/CAD","payout":0.86},
@@ -290,16 +295,19 @@ def otc_analyze(candles):
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
+    print(f"Command /otc from chat {msg.chat.id}")
     USER_MODE[msg.chat.id] = "OTC"
     bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
 
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
+    print(f"Command /market from chat {msg.chat.id}")
     USER_MODE[msg.chat.id] = "MARKET"
     bot.send_message(msg.chat.id, "✅ MARKET MODE")
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
+    print(f"Command /signal or /scan from chat {msg.chat.id}")
     if USER_MODE.get(msg.chat.id) == "OTC":
         bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
         return
@@ -346,13 +354,20 @@ def scan_cmd(msg):
 # === OTC PHOTO ===
 @bot.message_handler(content_types=["photo"])
 def otc_screen(msg):
+    print(f"Photo received from chat {msg.chat.id}")
     if USER_MODE.get(msg.chat.id) != "OTC":
+        print(f"Chat {msg.chat.id} not in OTC mode, ignoring photo")
         return
 
-    file_id = msg.photo[-1].file_id
-    file_info = bot.get_file(file_id)
-    image_bytes = bot.download_file(file_info.file_path)
-
+    try:
+        file_id = msg.photo[-1].file_id
+        file_info = bot.get_file(file_id)
+        image_bytes = bot.download_file(file_info.file_path)
+    except Exception as e:
+        print(f"Error downloading photo: {e}")
+        bot.send_message(msg.chat.id, "❌ Помилка при завантаженні фото")
+        return
+        
     bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 OTC аналіз...")
 
     candles = extract_candles_from_image(image_bytes)
@@ -371,21 +386,27 @@ def otc_screen(msg):
     )
     
 # ---------------- WEBHOOK ----------------
-import threading
-from flask import request
-
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    update = telebot.types.Update.de_json(request.get_data(as_text=True))
-    threading.Thread(target=lambda: bot.process_new_updates([update])).start()
-    return "OK", 200
+    try:
+        json_string = request.get_data(as_text=True)
+        print(f"Incoming update json: {json_string}")
+        update = telebot.types.Update.de_json(json_string)
+        threading.Thread(target=lambda: bot.process_new_updates([update])).start()
+        return "OK", 200
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        return "Error", 500
 
 @app.route("/")
 def root():
-    return "OK", 200
+    return "Bot is running", 200
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     import os
+
+    print("Starting bot server...")
+    print(f"Webhook URL should be set to: {WEBHOOK_URL}")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
