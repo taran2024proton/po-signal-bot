@@ -33,7 +33,7 @@ THRESHOLDS = {
 
 UTC = timezone.utc
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=True)
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
 
 USER_MODE = {}  # chat_id -> MARKET | OTC
@@ -393,11 +393,18 @@ def otc_screen(msg):
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_data(as_text=True)
-    print("DEBUG: Отримано update json:", data)
-    update = telebot.types.Update.de_json(data)
-    bot.process_new_updates([update])
-    return "OK", 200
+    print(f"DEBUG: Отримано update json: {data}")
 
+    update = telebot.types.Update.de_json(data)
+    print(f"DEBUG: Створено об'єкт update: {update}")
+
+    try:
+        bot.process_new_updates([update])  # Замість threading.Thread(...)
+        print("DEBUG: Виконано process_new_updates")
+    except Exception as e:
+        print(f"ERROR в process_new_updates: {e}")
+
+    return "OK", 200
 
 @app.route("/")
 def root():
