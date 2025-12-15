@@ -374,11 +374,16 @@ def otc_screen(msg):
     
 # ---------------- WEBHOOK ----------------
 import threading
+from flask import request
 
 @app.route("/webhook", methods=["POST"])
 def webhook():
     update = telebot.types.Update.de_json(request.get_data(as_text=True))
     threading.Thread(target=lambda: bot.process_new_updates([update])).start()
+    return "OK", 200
+
+@app.route("/")
+def root():
     return "OK", 200
 
 # ---------------- RUN ----------------
