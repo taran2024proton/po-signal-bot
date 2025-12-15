@@ -295,7 +295,7 @@ def otc_analyze(candles):
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
-    print(f"Command /otc from chat {msg.chat.id}")
+    print(f"DEBUG: /otc отримано від chat_id={msg.chat.id}")
     USER_MODE[msg.chat.id] = "OTC"
     bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
 
@@ -388,15 +388,12 @@ def otc_screen(msg):
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
-    try:
-        json_string = request.get_data(as_text=True)
-        print(f"Incoming update json: {json_string}")
-        update = telebot.types.Update.de_json(json_string)
-        threading.Thread(target=lambda: bot.process_new_updates([update])).start()
-        return "OK", 200
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        return "Error", 500
+    data = request.get_data(as_text=True)
+    print("DEBUG: Отримано update json:", data)
+    update = telebot.types.Update.de_json(data)
+    bot.process_new_updates([update])
+    return "OK", 200
+
 
 @app.route("/")
 def root():
