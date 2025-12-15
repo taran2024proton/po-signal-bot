@@ -178,9 +178,8 @@ def fetch(symbol, interval):
     if isinstance(df.columns, pd.MultiIndex):
         df.columns = df.columns.get_level_values(0)
 
-    required = {"Open", "High", "Low", "Close"} 
-    if not required.issubset(df.columns): 
-        print(f"⚠️ Missing OHLC for {symbol} {interval}") 
+    required = {"Open", "High", "Low", "Close"}
+    if not required.issubset(df.columns):
         return None
 
     df = df.reset_index()
@@ -198,7 +197,7 @@ def analyze(symbol, use_15m):
 
     ema50 = ema_last(close, 50)
     ema200 = ema_last(close, 200)
-    trend = "BUY" if ema50 > ema200 else "SELL"
+    trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
 
     rsi = rsi_last(close, 5)
     macd = macd_hist_last(close)
@@ -211,12 +210,12 @@ def analyze(symbol, use_15m):
     resistance = float(df5["High"].tail(60).max())
 
     score = 20
-    if trend == "BUY" and rsi < 55: score += 20
-    if trend == "SELL" and rsi > 45: score += 20
-    if trend == "BUY" and macd > 0: score += 20
-    if trend == "SELL" and macd < 0: score += 20
-    if trend == "BUY" and abs(price - support) < atr * 1.2: score += 20
-    if trend == "SELL" and abs(price - resistance) < atr * 1.2: score += 20
+    if trend == "КУПИТИ" and rsi < 55: score += 20
+    if trend == "ПРОДАТИ" and rsi > 45: score += 20
+    if trend == "КУПИТИ" and macd > 0: score += 20
+    if trend == "ПРОДАТИ" and macd < 0: score += 20
+    if trend == "КУПИТИ" and abs(price - support) < atr * 1.2: score += 20
+    if trend == "ПРОДАТИ" and abs(price - resistance) < atr * 1.2: score += 20
 
     strength = min(score, 100)
 
@@ -224,7 +223,7 @@ def analyze(symbol, use_15m):
         df15 = fetch(symbol, "15m")
         if df15 is None or len(df15) < 200:
             return None
-        t15 = "BUY" if ema_last(df15["Close"], 50) > ema_last(df15["Close"], 200) else "SELL"
+        t15 = "КУПИТИ" if ema_last(df15["Close"], 50) > ema_last(df15["Close"], 200) else "ПРОДАТИ"
         if t15 != trend:
             return None
 
@@ -262,7 +261,6 @@ def extract_candles_from_image(image_bytes, count=25):
             "high": y,
             "low": y + h
         })
-        
     return out
 
 def otc_analyze(candles):
@@ -275,9 +273,6 @@ def otc_analyze(candles):
 
     close_prices = pd.Series([c["close"] for c in candles])
     rsi = rsi_last(close_prices, period=10)
-
-    period_bb = 10
-    sma = close_prices.rolling(window=period_bb).mean().iloc[-1]
     
     impulse = []
     for c in candles[-20:-10]:
@@ -285,41 +280,10 @@ def otc_analyze(candles):
             impulse.append(c)
 
     if len(impulse) < 2:
-        print(f"DEBUG: OTC signal skipped: Not enough impulse candles found ({len(impulse)}<2)")
         return None
-        
+
     direction = "ПРОДАТИ" if impulse[-1]["close"] > impulse[-1]["open"] else "КУПИТИ"
-    
-    compression = candles[-10:-3]
-    bodies = [body(c) for c in compression]
-
-    if max(bodies) > sum(bodies) / len(bodies) * 1.6:
-        print("DEBUG: OTC signal skipped: Too much volatility in compression zone")
-        return None
-
-    support = min(c["low"] for c in compression)
-    resistance = max(c["high"] for c in compression)
-    breakout = candles[-2]
-
-    if direction == "ПРОДАТИ" and breakout["close"] > support:
-        if rsi > 52:
-            print(f"DEBUG: OTC signal skipped (PUT): RSI too high ({rsi})")
-            return None
-        if close_prices.iloc[-1] > sma:
-            print(f"DEBUG: OTC signal skipped (PUT): Price above SMA ({sma})")
-            return None
-        return "ПРОДАТИ"
-
-    if direction == "КУПИТИ" and breakout["close"] < resistance:
-        if rsi < 48:
-            print(f"DEBUG: OTC signal skipped (CALL): RSI too low ({rsi})")
-            return None
-        if close_prices.iloc[-1] < sma:
-            print(f"DEBUG: OTC signal skipped (CALL): Price below SMA ({sma})")
-            return None
-        return "КУПИТИ"
-        
-    return None
+    return direction
 
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
@@ -352,7 +316,12 @@ def scan_cmd(msg):
 
         res = analyze(a["symbol"], use_15m)
         if res and res["strength"] >= min_strength:
-            results.append(a["display"] + " " + res["trend"])
+            results.append({
+                "display": a["display"],
+                "trend": res["trend"],
+                "strength": res["strength"],
+                "payout": a["payout"]
+            })
 
         time.sleep(1)
 
@@ -374,7 +343,7 @@ def scan_cmd(msg):
 
     bot.send_message(msg.chat.id, "\n".join(out))
 
-# === OTC ADD ===
+# === OTC PHOTO ===
 @bot.message_handler(content_types=["photo"])
 def otc_screen(msg):
     if USER_MODE.get(msg.chat.id) != "OTC":
@@ -414,8 +383,6 @@ def root():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    import os 
+    import os
     port = int(os.environ.get("PORT", 5000))
-    bot.delete_webhook()
-    bot.set_webhook(WEBHOOK_URL)
     app.run(host="0.0.0.0", port=port)
