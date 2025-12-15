@@ -13,10 +13,6 @@ import pandas as pd
 import telebot
 from flask import Flask, request
 
-import cv2
-import numpy as np
-from PIL import Image
-
 # ---------------- CONFIG ----------------
 TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
 WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com/webhook"
@@ -238,14 +234,20 @@ def analyze(symbol, use_15m):
 
 # ================= OTC SCREEN ANALYSIS =================
 def extract_candles_from_image(image_bytes, count=25):
+    import cv2
+    import numpy as np
+    from PIL import Image
+    import io
+    
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = np.array(img)
+    
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     edges = cv2.Canny(gray, 50, 150)
 
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
     candles = []
-
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
         if h > w * 2 and h > 25:
