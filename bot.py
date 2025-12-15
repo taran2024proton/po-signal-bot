@@ -346,7 +346,7 @@ def scan_cmd(msg):
     out = []
     for r in results:
         out.append(
-            f"📌 <b>{r['display']}</b>\n"
+            f"📌 <b><code>{r['display']}</code></b>\n"
             f"🔔 {r['trend']} | {r['strength']}%\n"
             f"💰 Payout {int(r['payout']*100)}%\n"
             f"⏱ Expiry {EXPIRY_MIN} min\n"
