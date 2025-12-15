@@ -325,8 +325,6 @@ def scan_cmd(msg):
                 "payout": a["payout"]
             })
 
-        time.sleep(1)
-
     if not results:
         bot.send_message(msg.chat.id, "❌ No strong signals right now")
         return
