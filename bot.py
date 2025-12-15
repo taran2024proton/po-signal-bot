@@ -297,8 +297,12 @@ def otc_analyze(candles):
 def otc_mode(msg):
     print(f"DEBUG: /otc отримано від chat_id={msg.chat.id}")
     USER_MODE[msg.chat.id] = "OTC"
-    bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
-
+    try:
+        bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
+        print("DEBUG: Повідомлення /otc відправлено успішно")
+    except Exception as e:
+        print(f"ERROR sending message: {e}")
+        
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     print(f"Command /market from chat {msg.chat.id}")
