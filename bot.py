@@ -238,23 +238,39 @@ def analyze(symbol, use_15m):
     }
 
 # ================= OTC SCREEN ANALYSIS =================
+
+import cv2
+import numpy as np
+from PIL import Image
+import io
+
+
+# ------------------------------------------------------
+# 1. ВИТЯГ СВІЧОК ЗІ СКРІНУ
+# ------------------------------------------------------
+
 def extract_candles_from_image(image_bytes, count=25):
-    import cv2
-    import numpy as np
-    from PIL import Image
-    import io
-    
+    """
+    Повертає список свічок у форматі:
+    open, close, high, low
+    (адаптовано під OTC screen-анализ)
+    """
+
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = np.array(img)
-    
+
     gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
     edges = cv2.Canny(gray, 50, 150)
 
-    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+    contours, _ = cv2.findContours(
+        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
+    )
+
     candles = []
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
+
+        # фільтр "свічка, а не шум"
         if h > w * 2 and h > 25:
             candles.append((x, y, w, h))
 
@@ -263,34 +279,116 @@ def extract_candles_from_image(image_bytes, count=25):
     out = []
     for x, y, w, h in candles:
         out.append({
-            "open": y + h * 0.3,
-            "close": y + h * 0.7,
+            "open": y + h * 0.30,
+            "close": y + h * 0.70,
             "high": y,
             "low": y + h
         })
+
     return out
 
+
+# ------------------------------------------------------
+# 2. OTC АНАЛІЗ (СИЛЬНИЙ, ФІЛЬТРОВАНИЙ)
+# ------------------------------------------------------
+
 def otc_analyze(candles):
+    """
+    Повертає:
+    - "CALL"
+    - "PUT"
+    - None (Пропуск / Повтор / Отклонение)
+    """
+
     if len(candles) < 20:
-        print("DEBUG: OTC signal skipped: Not enough candles (<20)")
-        return None
-        
-    def body(c): return abs(c["close"] - c["open"])
-    def rng(c): return c["low"] - c["high"]
-
-    close_prices = pd.Series([c["close"] for c in candles])
-    rsi = rsi_last(close_prices, period=10)
-    
-    impulse = []
-    for c in candles[-20:-10]:
-        if rng(c) > 0 and body(c) / rng(c) > 0.4:
-            impulse.append(c)
-
-    if len(impulse) < 2:
         return None
 
-    direction = "ПРОДАТИ" if impulse[-1]["close"] > impulse[-1]["open"] else "КУПИТИ"
-    return direction
+    last = candles[-1]
+    recent = candles[-20:]
+
+    # ------------------ helpers ------------------
+
+    def body(c):
+        return abs(c["close"] - c["open"])
+
+    def rng(c):
+        return c["low"] - c["high"]
+
+    # ------------------ 1. ФЛЕТ ------------------
+
+    highs = [c["high"] for c in recent]
+    lows = [c["low"] for c in recent]
+
+    range_size = max(lows) - min(highs)
+    avg_body = sum(body(c) for c in recent) / 20
+
+    # ❌ не OTC-флет
+    if range_size > avg_body * 5:
+        return None
+
+    high_level = min(highs)
+    low_level = max(lows)
+    price = last["close"]
+
+    zone = range_size * 0.15
+    near_high = abs(price - high_level) <= zone
+    near_low = abs(price - low_level) <= zone
+
+    # ❌ центр діапазону
+    if not (near_high or near_low):
+        return None
+
+    # ------------------ 2. ІМПУЛЬС ------------------
+
+    if body(last) > rng(last) * 0.7:
+        return None
+
+    # ------------------ 3. СЕРІЯ ------------------
+
+    colors = []
+    for c in candles[-3:]:
+        if c["close"] > c["open"]:
+            colors.append(1)
+        elif c["close"] < c["open"]:
+            colors.append(-1)
+
+    if abs(sum(colors)) == 3:
+        return None
+
+    # ------------------ 4. REJECTION ------------------
+
+    upper_shadow = last["high"] - min(last["open"], last["close"])
+    lower_shadow = max(last["open"], last["close"]) - last["low"]
+
+    if near_high and upper_shadow < body(last) * 1.5:
+        return None
+
+    if near_low and lower_shadow < body(last) * 1.5:
+        return None
+
+    # ------------------ 5. ПІДТВЕРДЖЕННЯ ------------------
+    # підтвердження = наступна свічка має
+    # або зменшене тіло, або зміну кольору
+
+    prev = candles[-2]
+
+    if near_low:
+        if prev["close"] < prev["open"]:
+            return None
+
+    if near_high:
+        if prev["close"] > prev["open"]:
+            return None
+
+    # ------------------ 6. СИГНАЛ ------------------
+
+    if near_low:
+        return "CALL"
+
+    if near_high:
+        return "PUT"
+
+    return None
 
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
