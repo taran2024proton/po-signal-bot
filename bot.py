@@ -331,7 +331,7 @@ def otc_analyze(candles):
     range_size = max(highs) - min(lows)
 
     # OTC флет допускаємо ширший
-    if range_size > avg_body * 7:
+    if range_size > avg_body * 15:
         return None
 
     high_level = max(highs)
@@ -548,20 +548,18 @@ def breakout_analyze(candles):
 # ------------------------------------------------------
 
 def analyze_market(candles):
-    """
-    Диспетчер, який обирає найкращий доступний аналіз.
-    """
-    # Спершу спробуємо знайти сигнал за трендом
+    # 1. Спершу спробуємо знайти сигнал за трендом
     trend_signal = trend_analyze(candles)
-    if trend_signal:
-        return trend_signal
+    if trend_signal: return trend_signal
 
-    # Якщо сигналу за трендом немає, спробуємо знайти сигнал у флеті
+    # 2. Якщо тренду немає, перевіряємо пробій (Breakout)
+    breakout_signal = breakout_analyze(candles)
+    if breakout_signal: return breakout_signal
+
+    # 3. Якщо ні тренду, ні пробою, шукаємо флет (OTC)
     otc_signal = otc_analyze(candles)
-    if otc_signal:
-        return otc_signal
+    if otc_signal: return otc_signal
 
-    # Якщо нічого не знайшли, повертаємо None
     return None
     
 # ---------------- COMMANDS ----------------
