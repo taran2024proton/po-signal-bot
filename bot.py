@@ -586,22 +586,18 @@ def otc_mode(msg):
         
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
-    print(f"DEBUG: /market отримано від chat_id={msg.chat.id}")
+    print(f"Command /market from chat {msg.chat.id}")
     USER_MODE[msg.chat.id] = "MARKET"
-    try:
-        bot.send_message(msg.chat.id, "✅ <b>Режим Market увімкнено</b>")
-        print("DEBUG: Повідомлення /market відправлено успішно")
-    except Exception as e:
-        print(f"ERROR при відправці повідомлення /market: {e}")
+    bot.send_message(msg.chat.id, "✅ MARKET MODE")
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
-    print(f"DEBUG: /signal або /scan отримано від chat_id={msg.chat.id}")
+    print(f"Command /signal or /scan from chat {msg.chat.id}")
     if USER_MODE.get(msg.chat.id) == "OTC":
-        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй, будь ласка, надсилання скріншоту")
+        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
         return
 
-    bot.send_message(msg.chat.id, "🔍 Сканаємо ринок...")
+    bot.send_message(msg.chat.id, "🔍 Scanning market...")
 
     assets = get_assets()
     use_15m = THRESHOLDS[MODE]["USE_15M"]
@@ -623,7 +619,7 @@ def scan_cmd(msg):
             })
 
     if not results:
-        bot.send_message(msg.chat.id, "❌ На цей момент сильних сигналів немає.")
+        bot.send_message(msg.chat.id, "❌ No strong signals right now")
         return
 
     results.sort(key=lambda x: x["strength"], reverse=True)
@@ -640,71 +636,72 @@ def scan_cmd(msg):
 
     bot.send_message(msg.chat.id, "\n".join(out))
 
+
 # === OTC PHOTO ===
 @bot.message_handler(content_types=["photo"])
 def otc_screen(msg):
-    print(f"DEBUG: Отримано фото від chat_id={msg.chat.id}")
+    print(f"Photo received from chat {msg.chat.id}")
     if USER_MODE.get(msg.chat.id) != "OTC":
-        print(f"DEBUG: Користувач {msg.chat.id} не в режимі OTC — ігноруємо фото")
+        print(f"Chat {msg.chat.id} not in OTC mode, ignoring photo")
         return
 
     try:
         file_id = msg.photo[-1].file_id
         file_info = bot.get_file(file_id)
         image_bytes = bot.download_file(file_info.file_path)
-    except Exception as e:
-        print(f"ERROR: Не вдалося завантажити фото: {e}")
-        bot.send_message(msg.chat.id, "❌ Помилка при завантаженні фото. Спробуйте ще раз.")
-        return
-        
-    bot.send_message(msg.chat.id, "📥 Скріншот отримано\n🔍 Проводжу аналіз OTC...")
 
-    try:
+        bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 OTC аналіз...")
+
         candles = extract_candles_from_image(image_bytes)
-        signal, reason = otc_analyze(candles)
+        signal, reason = otc_analyze(candles)  # Припущення, що повертає (signal, reason)
 
         if not signal:
             bot.send_message(msg.chat.id, f"❌ OTC сигнал не виявлено: {reason}")
             return
 
-    direction_ua = "CALL (КУПІВЛЯ)" if signal["direction"] == "CALL" else "PUT (ПРОДАЖ)"
+        direction_ua = "CALL (КУПІВЛЯ)" if signal["direction"] == "CALL" else "PUT (ПРОДАЖ)"
+
         bot.send_message(
             msg.chat.id,
-            f"🔥 <b>OTC СИГНАЛ</b>\n"
-            f"📊 Напрямок: <b>{direction_ua}</b>\n"
-            f"⏱ Експірація: {signal['exp']} хв\n"
-            f"⚠️ Ризик: <b>СЕРЕДНІЙ</b>"
+            f"🔥 <b>OTC SIGNAL</b>\n"
+            f"📊 Напрямок: {direction_ua}\n"
+            f"⏱ Експірація 1 хв\n"
+            f"⚠️ Ризик: СЕРЕДНІЙ"
         )
+
     except Exception as e:
-        print(f"ERROR: Помилка при обробці OTC аналізу: {e}")
-        bot.send_message(msg.chat.id, "❌ Сталася помилка під час аналізу OTC. Спробуйте ще раз.")
-    
+        print(f"ERROR in OTC photo processing: {e}")
+        bot.send_message(msg.chat.id, "❌ Помилка при обробці фото. Спробуйте ще раз.")
+
+
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_data(as_text=True)
-    print(f"DEBUG: Отримано update JSON: {data}")
+    print(f"DEBUG: Отримано update json: {data}")
 
     update = telebot.types.Update.de_json(data)
     print(f"DEBUG: Створено об'єкт update: {update}")
 
     try:
-        bot.process_new_updates([update])
-        print("DEBUG: Успішно оброблено оновлення")
+        bot.process_new_updates([update])  # Замість threading.Thread(...)
+        print("DEBUG: Виконано process_new_updates")
     except Exception as e:
-        print(f"ERROR: Помилка при обробці оновлення: {e}")
+        print(f"ERROR в process_new_updates: {e}")
 
     return "OK", 200
 
+
 @app.route("/")
 def root():
-    return "Бот працює", 200
+    return "Bot is running", 200
+
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     import os
 
-    print("Запуск серверу бота...")
-    print(f"Вебхук має бути встановлений на: {WEBHOOK_URL}")
+    print("Starting bot server...")
+    print(f"Webhook URL should be set to: {WEBHOOK_URL}")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
