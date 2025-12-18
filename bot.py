@@ -663,7 +663,7 @@ def otc_screen(msg):
         candles = extract_candles_from_image(image_bytes)
         signal, reason = otc_analyze(candles)
 
-    if not signal:
+        if not signal:
             bot.send_message(msg.chat.id, f"❌ OTC сигнал не виявлено: {reason}")
             return
 
