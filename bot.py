@@ -498,7 +498,28 @@ def trend_analyze(candles):
         }
 
     return None
+    
+# ------------------------------------------------------
+# MARKET DISPATCHER
+# ------------------------------------------------------
 
+def analyze_market(candles):
+    """
+    Диспетчер, який обирає найкращий доступний аналіз.
+    """
+    # Спершу спробуємо знайти сигнал за трендом
+    trend_signal = trend_analyze(candles)
+    if trend_signal:
+        return trend_signal
+
+    # Якщо сигналу за трендом немає, спробуємо знайти сигнал у флеті
+    otc_signal = otc_analyze(candles)
+    if otc_signal:
+        return otc_signal
+
+    # Якщо нічого не знайшли, повертаємо None
+    return None
+    
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
