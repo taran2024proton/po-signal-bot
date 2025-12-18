@@ -308,11 +308,18 @@ def otc_analyze(candles):
 
     # ------------------ helpers ------------------
 
-    def body(c):
-        return abs(c["close"] - c["open"])
+    def candle_body(c):
+    return abs(c["close"] - c["open"])
 
-    def rng(c):
-        return c["low"] - c["high"]
+    def candle_range(c):
+    return c["low"] - c["high"]
+
+    def upper_shadow(c):
+    return c["high"] - max(c["open"], c["close"])
+
+    def lower_shadow(c):
+    return min(c["open"], c["close"]) - c["low"]
+
 
     # ------------------ 1. ФЛЕТ ------------------
 
@@ -355,40 +362,65 @@ def otc_analyze(candles):
     if abs(sum(colors)) == 3:
         return None
 
-    # ------------------ 4. REJECTION ------------------
+   # ------------------ 4. REJECTION (OTC optimized) ------------------
 
-    upper_shadow = last["high"] - min(last["open"], last["close"])
-    lower_shadow = max(last["open"], last["close"]) - last["low"]
+body_size = abs(last["close"] - last["open"])
+range_size = last["high"] - last["low"]
 
-    if near_high and upper_shadow < body(last) * 1.5:
+upper_shadow = last["high"] - max(last["open"], last["close"])
+lower_shadow = min(last["open"], last["close"]) - last["low"]
+
+# фільтр слабкої реакції
+if near_high:
+    if upper_shadow < body_size * 1.1:
         return None
 
-    if near_low and lower_shadow < body(last) * 1.5:
+if near_low:
+    if lower_shadow < body_size * 1.1:
         return None
 
-    # ------------------ 5. ПІДТВЕРДЖЕННЯ ------------------
-    # підтвердження = наступна свічка має
-    # або зменшене тіло, або зміну кольору
 
-    prev = candles[-2]
+# ------------------ 5. ПІДТВЕРДЖЕННЯ (мʼяке) ------------------
 
-    if near_low:
-        if prev["close"] < prev["open"]:
-            return None
+prev = candles[-2]
+prev_body = abs(prev["close"] - prev["open"])
 
-    if near_high:
-        if prev["close"] > prev["open"]:
-            return None
+# забороняємо тільки ЯВНИЙ пробій
+if near_high:
+    if prev["close"] > last["high"]:
+        return None
 
-    # ------------------ 6. СИГНАЛ ------------------
+if near_low:
+    if prev["close"] < last["low"]:
+        return None
 
-    if near_low:
-        return "CALL"
-
-    if near_high:
-        return "PUT"
-
+# якщо попередня свічка занадто сильна — пропускаємо
+if prev_body > body_size * 1.6:
     return None
+
+
+# ------------------ 6. СИГНАЛ + EXP ------------------
+
+# визначення експірації
+exp = 2
+if max(upper_shadow, lower_shadow) > range_size * 0.6:
+    exp = 3
+
+if near_low:
+    return {
+        "direction": "CALL",
+        "exp": exp,
+        "type": "OTC_REJECTION"
+    }
+
+if near_high:
+    return {
+        "direction": "PUT",
+        "exp": exp,
+        "type": "OTC_REJECTION"
+    }
+
+return None
 
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
