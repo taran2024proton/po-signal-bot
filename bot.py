@@ -309,16 +309,16 @@ def otc_analyze(candles):
     # ------------------ helpers ------------------
 
     def candle_body(c):
-    return abs(c["close"] - c["open"])
+        return abs(c["close"] - c["open"])
 
     def candle_range(c):
-    return c["low"] - c["high"]
+        return c["low"] - c["high"]
 
     def upper_shadow(c):
-    return c["high"] - max(c["open"], c["close"])
+        return c["high"] - max(c["open"], c["close"])
 
     def lower_shadow(c):
-    return min(c["open"], c["close"]) - c["low"]
+        return min(c["open"], c["close"]) - c["low"]
 
 
     # ------------------ 1. ФЛЕТ ------------------
