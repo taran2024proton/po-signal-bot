@@ -273,9 +273,17 @@ def extract_candles_from_image(image_bytes, count=30):
 
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
 
+    # --- ВИПРАВЛЕННЯ 1: Повний діапазон HSV для червоного та зеленого ---
+    # Зелений
     mask_green = cv2.inRange(hsv, np.array([40, 50, 50]), np.array([90, 255, 255]))
-    mask_red = cv2.inRange(hsv, np.array([0, 50, 50]), np.array([10, 255, 255]))
-    mask_combined = cv2.bitwise_or(mask_green, mask_red)
+    
+    # Червоний: два діапазони
+    mask_red1 = cv2.inRange(hsv, np.array([0, 50, 50]), np.array([10, 255, 255]))
+    mask_red2 = cv2.inRange(hsv, np.array([170, 50, 50]), np.array([180, 255, 255]))
+    
+    # Об'єднання масок
+    mask_red_combined = cv2.bitwise_or(mask_red1, mask_red2)
+    mask_combined = cv2.bitwise_or(mask_green, mask_red_combined)
 
     contours, _ = cv2.findContours(mask_combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
@@ -283,26 +291,31 @@ def extract_candles_from_image(image_bytes, count=30):
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
         if h > 5 and w > 2:  # Фільтр шуму
-            mid_pixel = img[y + h // 2, x + w // 2]
-            is_green = mid_pixel[1] > mid_pixel[0]  # G > R
+            # Використовуємо центр тіла для визначення кольору
+            mid_pixel_rgb = img[y + h // 2, x + w // 2]
+            is_green = mid_pixel_rgb[1] > mid_pixel_rgb[0]  # Перевірка G > R
 
-            # Координати свічки (Y збільшується вниз)
-            high = y  # найвища точка - мінімальний Y
-            low = y + h  # найнижча точка - максимальний Y
+            # Координати свічки (Y=0 зверху, Y зростає вниз)
+            # ВИПРАВЛЕННЯ 2: high_coord та low_coord - це координати Y
+            high_coord = y  # найвища точка на екрані (менше Y)
+            low_coord = y + h # найнижча точка на екрані (більше Y)
 
             if is_green:
-                open_price = low
-                close_price = high
+                # Для зеленої свічки: Open < Close. Open ціна знаходиться нижче на екрані (більше Y)
+                open_coord = low_coord
+                close_coord = high_coord
             else:
-                open_price = high
-                close_price = low
-
+                # Для червоної свічки: Open > Close. Open ціна знаходиться вище на екрані (менше Y)
+                open_coord = high_coord
+                close_coord = low_coord
+                
             raw_candles.append({
                 "x": x,
-                "open": float(open_price),
-                "close": float(close_price),
-                "high": float(high),
-                "low": float(low)
+                # Тут ми повертаємо координати Y, трактуючи їх як "ціни" на екрані
+                "open": float(open_coord), 
+                "close": float(close_coord),
+                "high": float(high_coord),
+                "low": float(low_coord)
             })
 
     # Сортуємо по осі X (зліва направо) та беремо останні count
