@@ -428,6 +428,77 @@ def otc_analyze(candles):
 
     return None
 
+# ------------------------------------------------------
+# TREND FOLLOWING ANALYZE 
+# ------------------------------------------------------
+
+def trend_analyze(candles):
+    """
+    Аналіз тренду. Шукає сигнал на продовження руху.
+    Повертає:
+    {
+        "direction": "CALL" | "PUT",
+        "exp": 2 
+    }
+    або None
+    """
+    if len(candles) < 20:
+        return None
+
+    last = candles[-1]
+    recent = candles[-20:]
+
+    def body(c):
+        return abs(c["close"] - c["open"])
+
+    avg_body = sum(body(c) for c in recent) / 20
+    
+    # 1. ВИЗНАЧЕННЯ ТРЕНДУ (НАПРЯМОК)
+    # Перевіряємо середній нахил за останні 20 свічок
+    trend_direction = 0
+    if recent[0]["close"] < recent[-1]["close"]: # Use recent list for start/end points
+        trend_direction = 1 # UP
+    elif recent[0]["close"] > recent[-1]["close"]:
+        trend_direction = -1 # DOWN
+
+    # Фільтр: тренд має бути достатньо сильним
+    range_size = max([c["high"] for c in recent]) - min([c["low"] for c in recent])
+    if range_size < avg_body * 5:
+        return None # Недостатньо сильний тренд
+
+    # 2. ФІЛЬТР ВІДКАТУ (КОРЕКЦІЇ)
+    # Шукаємо короткочасну зміну кольору перед входом
+
+    if trend_direction == 1: # Висхідний тренд (UP)
+        # Очікуємо червону свічку (відкат)
+        if last["close"] > last["open"]:
+            return None # Остання свічка зелена, чекаємо відкат
+
+    if trend_direction == -1: # Низхідний тренд (DOWN)
+        # Очікуємо зелену свічку (відкат)
+        if last["close"] < last["open"]:
+            return None # Остання свічка червона, чекаємо відкат
+
+    # 3. ФІЛЬТР ІМПУЛЬСУ НА ВХІД
+    # Тіло останньої свічки не має бути занадто великим (це має бути саме корекція, а не розворот)
+    if body(last) > avg_body * 1.5:
+        return None
+
+    # 4. СИГНАЛ (Вхід в напрямку тренду)
+    if trend_direction == 1:
+        return {
+            "direction": "CALL",
+            "exp": 2 # Експірація на 2 свічки
+        }
+
+    if trend_direction == -1:
+        return {
+            "direction": "PUT",
+            "exp": 2 # Експірація на 2 свічки
+        }
+
+    return None
+
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
