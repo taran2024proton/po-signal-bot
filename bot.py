@@ -244,6 +244,19 @@ import numpy as np
 from PIL import Image
 import io
 
+# ---------- GLOBAL HELPERS (Допоміжні функції) ----------
+
+def body(c):
+    return abs(c["close"] - c["open"])
+
+def rng(c):
+    return c["high"] - c["low"]
+
+def upper_shadow(c):
+    return c["high"] - max(c["open"], c["close"])
+
+def lower_shadow(c):
+    return min(c["open"], c["close"]) - c["low"]
 
 # ------------------------------------------------------
 # 1. ВИТЯГ СВІЧОК ЗІ СКРІНУ
@@ -308,20 +321,6 @@ def otc_analyze(candles):
     last = candles[-1]
     recent = candles[-20:]
 
-    # ---------- helpers ----------
-
-    def body(c):
-        return abs(c["close"] - c["open"])
-
-    def rng(c):
-        return c["high"] - c["low"]
-
-    def upper_shadow(c):
-        return c["high"] - max(c["open"], c["close"])
-
-    def lower_shadow(c):
-        return min(c["open"], c["close"]) - c["low"]
-
     avg_body = sum(body(c) for c in recent) / 20
 
     # ---------- 1. OTC FLAT CHECK (SOFT) ----------
@@ -339,7 +338,7 @@ def otc_analyze(candles):
     low_level = min(lows)
     price = last["close"]
 
-    zone = range_size * 0.25  # ⬅️ було 15%, тепер реалістично
+    zone = range_size * 0.25
 
     near_high = abs(price - high_level) <= zone
     near_low = abs(price - low_level) <= zone
@@ -349,7 +348,6 @@ def otc_analyze(candles):
 
     # ---------- 2. OVERPOWER FILTER ----------
 
-    # Забороняємо ТІЛЬКИ екстремальний імпульс
     if body(last) > rng(last) * 0.85:
         return None
 
@@ -394,7 +392,6 @@ def otc_analyze(candles):
 
     prev = candles[-2]
 
-    # забороняємо тільки ЧИСТИЙ пробій
     if near_high and prev["close"] > high_level:
         return None
 
@@ -435,12 +432,6 @@ def otc_analyze(candles):
 def trend_analyze(candles):
     """
     Аналіз тренду. Шукає сигнал на продовження руху.
-    Повертає:
-    {
-        "direction": "CALL" | "PUT",
-        "exp": 2 
-    }
-    або None
     """
     if len(candles) < 20:
         return None
@@ -448,15 +439,11 @@ def trend_analyze(candles):
     last = candles[-1]
     recent = candles[-20:]
 
-    def body(c):
-        return abs(c["close"] - c["open"])
-
     avg_body = sum(body(c) for c in recent) / 20
     
     # 1. ВИЗНАЧЕННЯ ТРЕНДУ (НАПРЯМОК)
-    # Перевіряємо середній нахил за останні 20 свічок
     trend_direction = 0
-    if recent[0]["close"] < recent[-1]["close"]: # Use recent list for start/end points
+    if recent[0]["close"] < recent[-1]["close"]:
         trend_direction = 1 # UP
     elif recent[0]["close"] > recent[-1]["close"]:
         trend_direction = -1 # DOWN
@@ -467,17 +454,13 @@ def trend_analyze(candles):
         return None # Недостатньо сильний тренд
 
     # 2. ФІЛЬТР ВІДКАТУ (КОРЕКЦІЇ)
-    # Шукаємо короткочасну зміну кольору перед входом
-
-    if trend_direction == 1: # Висхідний тренд (UP)
-        # Очікуємо червону свічку (відкат)
+    if trend_direction == 1:
         if last["close"] > last["open"]:
-            return None # Остання свічка зелена, чекаємо відкат
+            return None
 
-    if trend_direction == -1: # Низхідний тренд (DOWN)
-        # Очікуємо зелену свічку (відкат)
+    if trend_direction == -1:
         if last["close"] < last["open"]:
-            return None # Остання свічка червона, чекаємо відкат
+            return None
 
     # 3. ФІЛЬТР ІМПУЛЬСУ НА ВХІД
     # Тіло останньої свічки не має бути занадто великим (це має бути саме корекція, а не розворот)
@@ -497,6 +480,67 @@ def trend_analyze(candles):
             "exp": 2 # Експірація на 2 свічки
         }
 
+    return None
+
+# ------------------------------------------------------
+# BREAKOUT ANALYZE 
+# ------------------------------------------------------
+
+def breakout_analyze(candles):
+    """
+    Аналіз пробою рівня (Brekaout). Шукає імпульсний рух за межі діапазону.
+    """
+    if len(candles) < 20:
+        return None
+
+    last = candles[-1]
+    recent = candles[-20:]
+
+    # helpers
+    def body_ratio(c):
+        return body(c) / rng(c) if rng(c) > 0 else 0
+
+    # 1. ВИЗНАЧЕННЯ РІВНІВ І ДІАПАЗОНУ (FLAT/RANGE)
+    highs = [c["high"] for c in recent[:-1]] # Виключаємо останню свічку з розрахунку рівнів
+    lows = [c["low"] for c in recent[:-1]]
+    high_level = max(highs)
+    low_level = min(lows)
+
+    # 2. ПЕРЕВІРКА ПРОБОЮ
+    # Остання свічка повинна була закритися за межами попереднього діапазону
+    is_breakout_up = last["close"] > high_level and last["open"] <= high_level
+    is_breakout_down = last["close"] < low_level and last["open"] >= low_level
+
+    if not (is_breakout_up or is_breakout_down):
+        return None # Пробоя не було
+
+    # 3. ФІЛЬТР СИЛИ ІМПУЛЬСУ
+    # Тіло останньої свічки має бути великим (імпульсним)
+    if body_ratio(last) < 0.7: # Тіло займає > 70% всього діапазону свічки
+        return None 
+        
+    # Також перевіряємо, щоб попередній діапазон не був надто трендовим,
+    # інакше це може бути просто продовження тренду, а не чистою пробою консолідації.
+    avg_body = sum(body(c) for c in recent[:-1]) / 19
+    range_size = max(highs) - min(lows)
+    if range_size > avg_body * 6:
+         return None # Найімовірніше, це вже був тренд, а не консолідація
+
+    # 4. СИГНАЛ
+    if is_breakout_up:
+        return {
+            "direction": "CALL",
+            "exp": 2, # Торгуємо на продовження пробою
+            "type": "BREAKOUT_CALL"
+        }
+
+    if is_breakout_down:
+        return {
+            "direction": "PUT",
+            "exp": 2,
+            "type": "BREAKOUT_PUT"
+        }
+        
     return None
     
 # ------------------------------------------------------
