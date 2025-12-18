@@ -316,12 +316,17 @@ def otc_analyze(candles):
     """
 
     if len(candles) < 20:
-        return None
+         return None, "LESS_CANDLES"
 
     last = candles[-1]
     recent = candles[-20:]
 
     avg_body = sum(body(c) for c in recent) / 20
+
+    highs = [c["high"] for c in recent]
+    lows = [c["low"] for c in recent]
+
+    range_size = max(highs) - min(lows)
 
     # ---------- 1. OTC FLAT CHECK (SOFT) ----------
 
@@ -331,25 +336,41 @@ def otc_analyze(candles):
     range_size = max(highs) - min(lows)
 
     # OTC флет допускаємо ширший
-    if range_size > avg_body * 15:
-        return None
+    if range_size > avg_body * 25:
+        return None, "RANGE_TOO_WIDE"
 
     high_level = max(highs)
     low_level = min(lows)
     price = last["close"]
 
-    zone = range_size * 0.25
+    zone = range_size * 0.4
 
     near_high = abs(price - high_level) <= zone
     near_low = abs(price - low_level) <= zone
 
     if not (near_high or near_low):
-        return None
+        return None, "NOT_IN_ZONE"
 
     # ---------- 2. OVERPOWER FILTER ----------
 
-    if body(last) > rng(last) * 0.85:
-        return None
+    if body(last) > rng(last) * 0.95:
+        return None, "OVERPOWER"
+
+    up = upper_shadow(last)
+    down = lower_shadow(last)
+    b = body(last)
+
+    if near_high and up < b * 0.4:
+        return None, "WEAK_REJECT_HIGH"
+
+    if near_low and down < b * 0.4:
+        return None, "WEAK_REJECT_LOW"
+
+    return {
+        "direction": "PUT" if near_high else "CALL",
+        "exp": 2,
+        "type": "OTC_REJECTION"
+    }, "OK"
 
     # ---------- 3. MICRO-EXHAUSTION ----------
 
@@ -647,8 +668,8 @@ def otc_screen(msg):
     signal = otc_analyze(candles)
 
     if not signal:
-        bot.send_message(msg.chat.id, "❌ OTC-сигналу немає")
-        return
+    bot.send_message(msg.chat.id, f"❌ OTC: {reason}")
+    return
 
     bot.send_message(
         msg.chat.id,
