@@ -262,41 +262,50 @@ def lower_shadow(c):
 # 1. ВИТЯГ СВІЧОК (ВИПРАВЛЕНО РОЗПІЗНАВАННЯ)
 # ------------------------------------------------------
 def extract_candles_from_image(image_bytes, count=30):
+    import cv2
+    import numpy as np
+    from PIL import Image
+    import io
+
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = np.array(img)
     h_img, w_img, _ = img.shape
 
-    # Конвертуємо в HSV для кращого розпізнавання кольорів
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-    
-    # Маски для зелених та червоних свічок
+
     mask_green = cv2.inRange(hsv, np.array([40, 50, 50]), np.array([90, 255, 255]))
     mask_red = cv2.inRange(hsv, np.array([0, 50, 50]), np.array([10, 255, 255]))
     mask_combined = cv2.bitwise_or(mask_green, mask_red)
 
     contours, _ = cv2.findContours(mask_combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    
+
     raw_candles = []
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
-        if h > 5 and w > 2: # Фільтр шуму
-            # Визначаємо колір по центральній точці
-            mid_pixel = img[y + h//2, x + w//2]
-            is_green = mid_pixel[1] > mid_pixel[0] # G > R
-            
-            # В координатах зображення: Y зменшується вгору (high - це менше Y)
-            c_open = y + h if is_green else y
-            c_close = y if is_green else y + h
-            
+        if h > 5 and w > 2:  # Фільтр шуму
+            mid_pixel = img[y + h // 2, x + w // 2]
+            is_green = mid_pixel[1] > mid_pixel[0]  # G > R
+
+            # Координати свічки (Y збільшується вниз)
+            high = y  # найвища точка - мінімальний Y
+            low = y + h  # найнижча точка - максимальний Y
+
+            if is_green:
+                open_price = low
+                close_price = high
+            else:
+                open_price = high
+                close_price = low
+
             raw_candles.append({
                 "x": x,
-                "open": float(c_open),
-                "close": float(c_close),
-                "high": float(y),
-                "low": float(y + h)
+                "open": float(open_price),
+                "close": float(close_price),
+                "high": float(high),
+                "low": float(low)
             })
 
-    # Сортуємо по осі X (зліва направо)
+    # Сортуємо по осі X (зліва направо) та беремо останні count
     raw_candles = sorted(raw_candles, key=lambda x: x["x"])[-count:]
     return raw_candles
 
@@ -306,20 +315,25 @@ def extract_candles_from_image(image_bytes, count=30):
 
 def otc_analyze(candles):
     """
-    Returns:
-    {
-        direction: "CALL" | "PUT",
-        exp: 2 | 3,
-        type: "OTC_SOFT_REJECTION" | "OTC_STRONG_REJECTION"
-    }
-    or None
+    Повертає кортеж (signal_dict або None, message_reason)
     """
-
     if len(candles) < 20:
-         return None, "Мало свічок для аналізу"
+        return None, "Мало свічок для аналізу"
 
     last = candles[-1]
     recent = candles[-20:]
+
+    def body(c):
+        return abs(c["close"] - c["open"])
+
+    def rng(c):
+        return max(0.000001, c["high"] - c["low"])
+
+    def upper_shadow(c):
+        return c["high"] - max(c["open"], c["close"])
+
+    def lower_shadow(c):
+        return min(c["open"], c["close"]) - c["low"]
 
     avg_body = sum(body(c) for c in recent) / 20
 
@@ -328,14 +342,7 @@ def otc_analyze(candles):
 
     range_size = max(highs) - min(lows)
 
-    # ---------- 1. OTC FLAT CHECK (SOFT) ----------
-
-    highs = [c["high"] for c in recent]
-    lows = [c["low"] for c in recent]
-
-    range_size = max(highs) - min(lows)
-
-    # OTC флет допускаємо ширший
+     # OTC флет допускаємо ширший
     if range_size > avg_body * 25:
         return None, "Діапазон надто широкий"
 
@@ -351,8 +358,6 @@ def otc_analyze(candles):
     if not (near_high or near_low):
         return None, "Ціна не в зоні підтримки/опору"
 
-    # ---------- 2. OVERPOWER FILTER ----------
-
     if body(last) > rng(last) * 0.95:
         return None, "Свічка занадто потужна"
 
@@ -365,18 +370,6 @@ def otc_analyze(candles):
 
     if near_low and down < b * 0.4:
         return None, "Слабкий відбій від нижнього рівня"
-
-    return {
-        "direction": "PUT" if near_high else "CALL",
-        "exp": 2,
-        "type": "OTC_REJECTION"
-    }, "OK"
-
-    # ---------- 4. REJECTION QUALITY ----------
-
-    up = upper_shadow(last)
-    down = lower_shadow(last)
-    b = body(last)
 
     soft_reject = False
     strong_reject = False
@@ -396,8 +389,6 @@ def otc_analyze(candles):
     if not soft_reject:
         return None, "Відбій слабкий"
 
-    # ---------- 5. CONFIRMATION (REALISTIC OTC) ----------
-
     prev = candles[-2]
 
     if near_high and prev["close"] > high_level:
@@ -406,8 +397,6 @@ def otc_analyze(candles):
     if near_low and prev["close"] < low_level:
         return None, "Попередня свічка нижче рівня підтримки"
 
-    # ---------- 6. EXPIRATION LOGIC ----------
-
     if strong_reject:
         exp = 3
         sig_type = "OTC_STRONG_REJECTION"
@@ -415,24 +404,22 @@ def otc_analyze(candles):
         exp = 2
         sig_type = "OTC_SOFT_REJECTION"
 
-    # ---------- 7. SIGNAL ----------
-
     if near_low:
         return {
             "direction": "CALL",
             "exp": exp,
             "type": sig_type
-        }
+        }, "OK"
 
     if near_high:
         return {
             "direction": "PUT",
             "exp": exp,
             "type": sig_type
-        }
+        }, "OK"
 
     return None, "Без сигналу"
-
+    
 # ------------------------------------------------------
 # TREND FOLLOWING ANALYZE 
 # ------------------------------------------------------
