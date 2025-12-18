@@ -288,18 +288,18 @@ def extract_candles_from_image(image_bytes, count=25):
     return out
 
 # ------------------------------------------------------
-# 2. OTC АНАЛІЗ (REJECTION + 2–3 хв)
+# OTC ANALYZE — ADAPTIVE (2m / 3m)
 # ------------------------------------------------------
 
 def otc_analyze(candles):
     """
-    Повертає:
-    dict {
-        direction: CALL / PUT
-        exp: 2 або 3
-        type: OTC_REJECTION
+    Returns:
+    {
+        direction: "CALL" | "PUT",
+        exp: 2 | 3,
+        type: "OTC_SOFT_REJECTION" | "OTC_STRONG_REJECTION"
     }
-    або None
+    or None
     """
 
     if len(candles) < 20:
@@ -308,7 +308,7 @@ def otc_analyze(candles):
     last = candles[-1]
     recent = candles[-20:]
 
-    # ------------------ helpers ------------------
+    # ---------- helpers ----------
 
     def body(c):
         return abs(c["close"] - c["open"])
@@ -322,36 +322,38 @@ def otc_analyze(candles):
     def lower_shadow(c):
         return min(c["open"], c["close"]) - c["low"]
 
-    # ------------------ 1. ФЛЕТ ------------------
+    avg_body = sum(body(c) for c in recent) / 20
+
+    # ---------- 1. OTC FLAT CHECK (SOFT) ----------
 
     highs = [c["high"] for c in recent]
     lows = [c["low"] for c in recent]
 
     range_size = max(highs) - min(lows)
-    avg_body = sum(body(c) for c in recent) / 20
 
-    # ❌ не OTC-флет
-    if range_size > avg_body * 5:
+    # OTC флет допускаємо ширший
+    if range_size > avg_body * 7:
         return None
 
     high_level = max(highs)
     low_level = min(lows)
     price = last["close"]
 
-    zone = range_size * 0.15
+    zone = range_size * 0.25  # ⬅️ було 15%, тепер реалістично
+
     near_high = abs(price - high_level) <= zone
     near_low = abs(price - low_level) <= zone
 
-    # ❌ центр діапазону
     if not (near_high or near_low):
         return None
 
-    # ------------------ 2. ІМПУЛЬС ------------------
+    # ---------- 2. OVERPOWER FILTER ----------
 
-    if body(last) > rng(last) * 0.7:
+    # Забороняємо ТІЛЬКИ екстремальний імпульс
+    if body(last) > rng(last) * 0.85:
         return None
 
-    # ------------------ 3. СЕРІЯ ------------------
+    # ---------- 3. MICRO-EXHAUSTION ----------
 
     colors = []
     for c in candles[-3:]:
@@ -360,55 +362,68 @@ def otc_analyze(candles):
         elif c["close"] < c["open"]:
             colors.append(-1)
 
+    # три однакові — пропуск
     if abs(sum(colors)) == 3:
         return None
 
-    # ------------------ 4. REJECTION ------------------
+    # ---------- 4. REJECTION QUALITY ----------
 
-    body_size = body(last)
-    candle_range = rng(last)
+    up = upper_shadow(last)
+    down = lower_shadow(last)
+    b = body(last)
 
-    up_shadow = upper_shadow(last)
-    low_shadow = lower_shadow(last)
+    soft_reject = False
+    strong_reject = False
 
-    if near_high and up_shadow < body_size * 1.1:
+    if near_high:
+        if up >= b * 0.7:
+            soft_reject = True
+        if up >= b * 1.3:
+            strong_reject = True
+
+    if near_low:
+        if down >= b * 0.7:
+            soft_reject = True
+        if down >= b * 1.3:
+            strong_reject = True
+
+    if not soft_reject:
         return None
 
-    if near_low and low_shadow < body_size * 1.1:
-        return None
-
-    # ------------------ 5. ПІДТВЕРДЖЕННЯ ------------------
+    # ---------- 5. CONFIRMATION (REALISTIC OTC) ----------
 
     prev = candles[-2]
-    prev_body = body(prev)
 
-    if near_high and prev["close"] > last["high"]:
+    # забороняємо тільки ЧИСТИЙ пробій
+    if near_high and prev["close"] > high_level:
         return None
 
-    if near_low and prev["close"] < last["low"]:
+    if near_low and prev["close"] < low_level:
         return None
 
-    if prev_body > body_size * 1.6:
-        return None
+    # ---------- 6. EXPIRATION LOGIC ----------
 
-    # ------------------ 6. EXP + SIGNAL ------------------
-
-    exp = 2
-    if max(up_shadow, low_shadow) > candle_range * 0.6:
+    if strong_reject:
         exp = 3
+        sig_type = "OTC_STRONG_REJECTION"
+    else:
+        exp = 2
+        sig_type = "OTC_SOFT_REJECTION"
+
+    # ---------- 7. SIGNAL ----------
 
     if near_low:
         return {
             "direction": "CALL",
             "exp": exp,
-            "type": "OTC_REJECTION"
+            "type": sig_type
         }
 
     if near_high:
         return {
             "direction": "PUT",
             "exp": exp,
-            "type": "OTC_REJECTION"
+            "type": sig_type
         }
 
     return None
