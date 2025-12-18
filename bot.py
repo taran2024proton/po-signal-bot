@@ -287,17 +287,19 @@ def extract_candles_from_image(image_bytes, count=25):
 
     return out
 
-
 # ------------------------------------------------------
-# 2. OTC АНАЛІЗ (СИЛЬНИЙ, ФІЛЬТРОВАНИЙ)
+# 2. OTC АНАЛІЗ (REJECTION + 2–3 хв)
 # ------------------------------------------------------
 
 def otc_analyze(candles):
     """
     Повертає:
-    - "CALL"
-    - "PUT"
-    - None (Пропуск / Повтор / Отклонение)
+    dict {
+        direction: CALL / PUT
+        exp: 2 або 3
+        type: OTC_REJECTION
+    }
+    або None
     """
 
     if len(candles) < 20:
@@ -308,11 +310,11 @@ def otc_analyze(candles):
 
     # ------------------ helpers ------------------
 
-    def candle_body(c):
+    def body(c):
         return abs(c["close"] - c["open"])
 
-    def candle_range(c):
-        return c["low"] - c["high"]
+    def rng(c):
+        return c["high"] - c["low"]
 
     def upper_shadow(c):
         return c["high"] - max(c["open"], c["close"])
@@ -320,21 +322,20 @@ def otc_analyze(candles):
     def lower_shadow(c):
         return min(c["open"], c["close"]) - c["low"]
 
-
     # ------------------ 1. ФЛЕТ ------------------
 
     highs = [c["high"] for c in recent]
     lows = [c["low"] for c in recent]
 
-    range_size = max(lows) - min(highs)
+    range_size = max(highs) - min(lows)
     avg_body = sum(body(c) for c in recent) / 20
 
     # ❌ не OTC-флет
     if range_size > avg_body * 5:
         return None
 
-    high_level = min(highs)
-    low_level = max(lows)
+    high_level = max(highs)
+    low_level = min(lows)
     price = last["close"]
 
     zone = range_size * 0.15
@@ -362,65 +363,55 @@ def otc_analyze(candles):
     if abs(sum(colors)) == 3:
         return None
 
-   # ------------------ 4. REJECTION (OTC optimized) ------------------
+    # ------------------ 4. REJECTION ------------------
 
-body_size = abs(last["close"] - last["open"])
-range_size = last["high"] - last["low"]
+    body_size = body(last)
+    candle_range = rng(last)
 
-upper_shadow = last["high"] - max(last["open"], last["close"])
-lower_shadow = min(last["open"], last["close"]) - last["low"]
+    up_shadow = upper_shadow(last)
+    low_shadow = lower_shadow(last)
 
-# фільтр слабкої реакції
-if near_high:
-    if upper_shadow < body_size * 1.1:
+    if near_high and up_shadow < body_size * 1.1:
         return None
 
-if near_low:
-    if lower_shadow < body_size * 1.1:
+    if near_low and low_shadow < body_size * 1.1:
         return None
 
+    # ------------------ 5. ПІДТВЕРДЖЕННЯ ------------------
 
-# ------------------ 5. ПІДТВЕРДЖЕННЯ (мʼяке) ------------------
+    prev = candles[-2]
+    prev_body = body(prev)
 
-prev = candles[-2]
-prev_body = abs(prev["close"] - prev["open"])
-
-# забороняємо тільки ЯВНИЙ пробій
-if near_high:
-    if prev["close"] > last["high"]:
+    if near_high and prev["close"] > last["high"]:
         return None
 
-if near_low:
-    if prev["close"] < last["low"]:
+    if near_low and prev["close"] < last["low"]:
         return None
 
-# якщо попередня свічка занадто сильна — пропускаємо
-if prev_body > body_size * 1.6:
+    if prev_body > body_size * 1.6:
+        return None
+
+    # ------------------ 6. EXP + SIGNAL ------------------
+
+    exp = 2
+    if max(up_shadow, low_shadow) > candle_range * 0.6:
+        exp = 3
+
+    if near_low:
+        return {
+            "direction": "CALL",
+            "exp": exp,
+            "type": "OTC_REJECTION"
+        }
+
+    if near_high:
+        return {
+            "direction": "PUT",
+            "exp": exp,
+            "type": "OTC_REJECTION"
+        }
+
     return None
-
-
-# ------------------ 6. СИГНАЛ + EXP ------------------
-
-# визначення експірації
-exp = 2
-if max(upper_shadow, lower_shadow) > range_size * 0.6:
-    exp = 3
-
-if near_low:
-    return {
-        "direction": "CALL",
-        "exp": exp,
-        "type": "OTC_REJECTION"
-    }
-
-if near_high:
-    return {
-        "direction": "PUT",
-        "exp": exp,
-        "type": "OTC_REJECTION"
-    }
-
-return None
 
 # ---------------- COMMANDS ----------------
 @bot.message_handler(commands=["otc"])
