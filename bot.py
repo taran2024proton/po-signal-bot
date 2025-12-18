@@ -250,7 +250,7 @@ def body(c):
     return abs(c["close"] - c["open"])
 
 def rng(c):
-    return c["high"] - c["low"]
+    return max(0.000001, c["high"] - c["low"])
 
 def upper_shadow(c):
     return c["high"] - max(c["open"], c["close"])
@@ -259,46 +259,46 @@ def lower_shadow(c):
     return min(c["open"], c["close"]) - c["low"]
 
 # ------------------------------------------------------
-# 1. ВИТЯГ СВІЧОК ЗІ СКРІНУ
+# 1. ВИТЯГ СВІЧОК (ВИПРАВЛЕНО РОЗПІЗНАВАННЯ)
 # ------------------------------------------------------
-
-def extract_candles_from_image(image_bytes, count=25):
-    """
-    Повертає список свічок у форматі:
-    open, close, high, low
-    (адаптовано під OTC screen-анализ)
-    """
-
+def extract_candles_from_image(image_bytes, count=30):
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = np.array(img)
+    h_img, w_img, _ = img.shape
 
-    gray = cv2.cvtColor(img, cv2.COLOR_RGB2GRAY)
-    edges = cv2.Canny(gray, 50, 150)
+    # Конвертуємо в HSV для кращого розпізнавання кольорів
+    hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
+    
+    # Маски для зелених та червоних свічок
+    mask_green = cv2.inRange(hsv, np.array([40, 50, 50]), np.array([90, 255, 255]))
+    mask_red = cv2.inRange(hsv, np.array([0, 50, 50]), np.array([10, 255, 255]))
+    mask_combined = cv2.bitwise_or(mask_green, mask_red)
 
-    contours, _ = cv2.findContours(
-        edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
-    )
+    contours, _ = cv2.findContours(mask_combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    
+    raw_candles = []
+    for cnt in contours:
+        x, y, w, h = cv2.boundingRect(cnt)
+        if h > 5 and w > 2: # Фільтр шуму
+            # Визначаємо колір по центральній точці
+            mid_pixel = img[y + h//2, x + w//2]
+            is_green = mid_pixel[1] > mid_pixel[0] # G > R
+            
+            # В координатах зображення: Y зменшується вгору (high - це менше Y)
+            c_open = y + h if is_green else y
+            c_close = y if is_green else y + h
+            
+            raw_candles.append({
+                "x": x,
+                "open": float(c_open),
+                "close": float(c_close),
+                "high": float(y),
+                "low": float(y + h)
+            })
 
-    candles = []
-    for c in contours:
-        x, y, w, h = cv2.boundingRect(c)
-
-        # фільтр "свічка, а не шум"
-        if h > w * 2 and h > 25:
-            candles.append((x, y, w, h))
-
-    candles = sorted(candles, key=lambda x: x[0])[-count:]
-
-    out = []
-    for x, y, w, h in candles:
-        out.append({
-            "open": y + h * 0.30,
-            "close": y + h * 0.70,
-            "high": y,
-            "low": y + h
-        })
-
-    return out
+    # Сортуємо по осі X (зліва направо)
+    raw_candles = sorted(raw_candles, key=lambda x: x["x"])[-count:]
+    return raw_candles
 
 # ------------------------------------------------------
 # OTC ANALYZE — ADAPTIVE (2m / 3m)
@@ -359,10 +359,6 @@ def otc_analyze(candles):
             colors.append(1)
         elif c["close"] < c["open"]:
             colors.append(-1)
-
-    # три однакові — пропуск
-    if abs(sum(colors)) == 3:
-        return None
 
     # ---------- 4. REJECTION QUALITY ----------
 
@@ -548,17 +544,20 @@ def breakout_analyze(candles):
 # ------------------------------------------------------
 
 def analyze_market(candles):
-    # 1. Спершу спробуємо знайти сигнал за трендом
-    trend_signal = trend_analyze(candles)
-    if trend_signal: return trend_signal
+    if not candles or len(candles) < 30:
+        return None
 
-    # 2. Якщо тренду немає, перевіряємо пробій (Breakout)
-    breakout_signal = breakout_analyze(candles)
-    if breakout_signal: return breakout_signal
+    # Пріоритет 1: Пробій рівня (найсильніший імпульс)
+    res = breakout_analyze(candles)
+    if res: return res
 
-    # 3. Якщо ні тренду, ні пробою, шукаємо флет (OTC)
-    otc_signal = otc_analyze(candles)
-    if otc_signal: return otc_signal
+    # Пріоритет 2: Трендовий відкат
+    res = trend_analyze(candles)
+    if res: return res
+
+    # Пріоритет 3: Флет та OTC розвороти
+    res = otc_analyze(candles)
+    if res: return res
 
     return None
     
