@@ -316,7 +316,7 @@ def otc_analyze(candles):
     """
 
     if len(candles) < 20:
-         return None, "LESS_CANDLES"
+         return None, "Мало свічок для аналізу"
 
     last = candles[-1]
     recent = candles[-20:]
@@ -337,7 +337,7 @@ def otc_analyze(candles):
 
     # OTC флет допускаємо ширший
     if range_size > avg_body * 25:
-        return None, "RANGE_TOO_WIDE"
+        return None, "Діапазон надто широкий"
 
     high_level = max(highs)
     low_level = min(lows)
@@ -349,37 +349,28 @@ def otc_analyze(candles):
     near_low = abs(price - low_level) <= zone
 
     if not (near_high or near_low):
-        return None, "NOT_IN_ZONE"
+        return None, "Ціна не в зоні підтримки/опору"
 
     # ---------- 2. OVERPOWER FILTER ----------
 
     if body(last) > rng(last) * 0.95:
-        return None, "OVERPOWER"
+        return None, "Свічка занадто потужна"
 
     up = upper_shadow(last)
     down = lower_shadow(last)
     b = body(last)
 
     if near_high and up < b * 0.4:
-        return None, "WEAK_REJECT_HIGH"
+        return None, "Слабкий відбій від верхнього рівня"
 
     if near_low and down < b * 0.4:
-        return None, "WEAK_REJECT_LOW"
+        return None, "Слабкий відбій від нижнього рівня"
 
     return {
         "direction": "PUT" if near_high else "CALL",
         "exp": 2,
         "type": "OTC_REJECTION"
     }, "OK"
-
-    # ---------- 3. MICRO-EXHAUSTION ----------
-
-    colors = []
-    for c in candles[-3:]:
-        if c["close"] > c["open"]:
-            colors.append(1)
-        elif c["close"] < c["open"]:
-            colors.append(-1)
 
     # ---------- 4. REJECTION QUALITY ----------
 
@@ -403,17 +394,17 @@ def otc_analyze(candles):
             strong_reject = True
 
     if not soft_reject:
-        return None
+        return None, "Відбій слабкий"
 
     # ---------- 5. CONFIRMATION (REALISTIC OTC) ----------
 
     prev = candles[-2]
 
     if near_high and prev["close"] > high_level:
-        return None
+        return None, "Попередня свічка вище рівня опору"
 
     if near_low and prev["close"] < low_level:
-        return None
+        return None, "Попередня свічка нижче рівня підтримки"
 
     # ---------- 6. EXPIRATION LOGIC ----------
 
@@ -440,7 +431,7 @@ def otc_analyze(candles):
             "type": sig_type
         }
 
-    return None
+    return None, "Без сигналу"
 
 # ------------------------------------------------------
 # TREND FOLLOWING ANALYZE 
@@ -595,18 +586,22 @@ def otc_mode(msg):
         
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
-    print(f"Command /market from chat {msg.chat.id}")
+    print(f"DEBUG: /market отримано від chat_id={msg.chat.id}")
     USER_MODE[msg.chat.id] = "MARKET"
-    bot.send_message(msg.chat.id, "✅ MARKET MODE")
+    try:
+        bot.send_message(msg.chat.id, "✅ <b>Режим Market увімкнено</b>")
+        print("DEBUG: Повідомлення /market відправлено успішно")
+    except Exception as e:
+        print(f"ERROR при відправці повідомлення /market: {e}")
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
-    print(f"Command /signal or /scan from chat {msg.chat.id}")
+    print(f"DEBUG: /signal або /scan отримано від chat_id={msg.chat.id}")
     if USER_MODE.get(msg.chat.id) == "OTC":
-        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
+        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй, будь ласка, надсилання скріншоту")
         return
 
-    bot.send_message(msg.chat.id, "🔍 Scanning market...")
+    bot.send_message(msg.chat.id, "🔍 Сканаємо ринок...")
 
     assets = get_assets()
     use_15m = THRESHOLDS[MODE]["USE_15M"]
@@ -628,7 +623,7 @@ def scan_cmd(msg):
             })
 
     if not results:
-        bot.send_message(msg.chat.id, "❌ No strong signals right now")
+        bot.send_message(msg.chat.id, "❌ На цей момент сильних сигналів немає.")
         return
 
     results.sort(key=lambda x: x["strength"], reverse=True)
@@ -648,9 +643,9 @@ def scan_cmd(msg):
 # === OTC PHOTO ===
 @bot.message_handler(content_types=["photo"])
 def otc_screen(msg):
-    print(f"Photo received from chat {msg.chat.id}")
+    print(f"DEBUG: Отримано фото від chat_id={msg.chat.id}")
     if USER_MODE.get(msg.chat.id) != "OTC":
-        print(f"Chat {msg.chat.id} not in OTC mode, ignoring photo")
+        print(f"DEBUG: Користувач {msg.chat.id} не в режимі OTC — ігноруємо фото")
         return
 
     try:
@@ -658,53 +653,58 @@ def otc_screen(msg):
         file_info = bot.get_file(file_id)
         image_bytes = bot.download_file(file_info.file_path)
     except Exception as e:
-        print(f"Error downloading photo: {e}")
-        bot.send_message(msg.chat.id, "❌ Помилка при завантаженні фото")
+        print(f"ERROR: Не вдалося завантажити фото: {e}")
+        bot.send_message(msg.chat.id, "❌ Помилка при завантаженні фото. Спробуйте ще раз.")
         return
         
-    bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 OTC аналіз...")
+    bot.send_message(msg.chat.id, "📥 Скріншот отримано\n🔍 Проводжу аналіз OTC...")
 
-    candles = extract_candles_from_image(image_bytes)
-    signal = otc_analyze(candles)
+    try:
+        candles = extract_candles_from_image(image_bytes)
+        signal, reason = otc_analyze(candles)
 
     if not signal:
-    bot.send_message(msg.chat.id, f"❌ OTC: {reason}")
-    return
+            bot.send_message(msg.chat.id, f"❌ OTC сигнал не виявлено: {reason}")
+            return
 
-    bot.send_message(
-        msg.chat.id,
-        f"🔥 <b>OTC SIGNAL</b>\n"
-        f"📊 {signal}\n"
-        f"⏱ Експірація 1 хв\n"
-        f"⚠️ Ризик: СЕРЕДНІЙ"
-    )
+    direction_ua = "CALL (КУПІВЛЯ)" if signal["direction"] == "CALL" else "PUT (ПРОДАЖ)"
+        bot.send_message(
+            msg.chat.id,
+            f"🔥 <b>OTC СИГНАЛ</b>\n"
+            f"📊 Напрямок: <b>{direction_ua}</b>\n"
+            f"⏱ Експірація: {signal['exp']} хв\n"
+            f"⚠️ Ризик: <b>СЕРЕДНІЙ</b>"
+        )
+    except Exception as e:
+        print(f"ERROR: Помилка при обробці OTC аналізу: {e}")
+        bot.send_message(msg.chat.id, "❌ Сталася помилка під час аналізу OTC. Спробуйте ще раз.")
     
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
 def webhook():
     data = request.get_data(as_text=True)
-    print(f"DEBUG: Отримано update json: {data}")
+    print(f"DEBUG: Отримано update JSON: {data}")
 
     update = telebot.types.Update.de_json(data)
     print(f"DEBUG: Створено об'єкт update: {update}")
 
     try:
-        bot.process_new_updates([update])  # Замість threading.Thread(...)
-        print("DEBUG: Виконано process_new_updates")
+        bot.process_new_updates([update])
+        print("DEBUG: Успішно оброблено оновлення")
     except Exception as e:
-        print(f"ERROR в process_new_updates: {e}")
+        print(f"ERROR: Помилка при обробці оновлення: {e}")
 
     return "OK", 200
 
 @app.route("/")
 def root():
-    return "Bot is running", 200
+    return "Бот працює", 200
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
     import os
 
-    print("Starting bot server...")
-    print(f"Webhook URL should be set to: {WEBHOOK_URL}")
+    print("Запуск серверу бота...")
+    print(f"Вебхук має бути встановлений на: {WEBHOOK_URL}")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
