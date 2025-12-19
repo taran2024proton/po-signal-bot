@@ -22,7 +22,7 @@ CACHE_FILE = "cache.json"
 CACHE_SECONDS = 120
 
 PAYOUT_MIN = 0.80
-EXPIRY_MIN = 3
+EXPIRY_MIN = 5
 MAX_ASSETS = 15
 
 MODE = "aggressive"
@@ -277,7 +277,7 @@ def extract_candles_from_image(image_bytes, count=30):
                 open_coord = high_coord
                 close_coord = low_coord
                 
-            raw_candles.append({
+            raw_candles.({
                 "x": x,
                 # Тут ми повертаємо координати Y, трактуючи їх як "ціни" на екрані
                 "open": float(open_coord), 
