@@ -561,6 +561,7 @@ def market_mode(msg):
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
     print(f"Command /signal or /scan from chat {msg.chat.id}")
+    
     if USER_MODE.get(msg.chat.id) == "OTC":
         bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
         return
@@ -569,6 +570,7 @@ def scan_cmd(msg):
     
     checked = 0
     skipped_payout = 0
+    no_data = 0
 
     assets = get_assets()
     use_15m = THRESHOLDS[MODE]["USE_15M"]
@@ -587,6 +589,7 @@ def scan_cmd(msg):
         if res is None:
             no_data += 1
             continue
+            
         if res and res["strength"] >= min_strength:
             results.append({
                 "display": a["display"],
@@ -599,9 +602,9 @@ def scan_cmd(msg):
         bot.send_message(
             msg.chat.id,
             f"ℹ️ Перевірено пар: {checked}\n"
+            f"📉 Без даних (yfinance): {no_data}\n"
             f"⏭ Пропущено через payout: {skipped_payout}\n"
             f"❌ Сильних сигналів поки немає"
-            f"📉 Без даних (yfinance): {no_data}\n"
     )
     return
 
@@ -613,11 +616,11 @@ def scan_cmd(msg):
             f"📌 <b><code>{r['display']}</code></b>\n"
             f"🔔 {r['trend']} | {r['strength']}%\n"
             f"💰 Payout {int(r['payout']*100)}%\n"
-            f"⏱ Expiry {EXPIRY_MIN} min\n"
+            f"⏱ Expiry {EXPIRY_MIN} хв\n"
             f"—"
         )
 
-    bot.send_message(msg.chat.id, "\n".join(results))
+    bot.send_message(msg.chat.id, "\n".join(out))
 
 
 # === OTC PHOTO ===
