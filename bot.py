@@ -23,12 +23,12 @@ CACHE_SECONDS = 120
 
 PAYOUT_MIN = 0.80
 EXPIRY_MIN = 3
-MAX_ASSETS = 21
+MAX_ASSETS = 15
 
 MODE = "conservative"
 THRESHOLDS = {
-    "conservative": {"MIN_STRENGTH": 80, "USE_15M": True},
-    "aggressive": {"MIN_STRENGTH": 70, "USE_15M": False},
+    "conservative": {"MIN_STRENGTH": 70, "USE_15M": True},
+    "aggressive": {"MIN_STRENGTH": 60, "USE_15M": False},
 }
 
 UTC = timezone.utc
@@ -54,18 +54,18 @@ def save_cache(c):
 cache = load_cache()
 
 def cache_get(key):
-    if key not in cache:
+    item = cache.get(key)
+    if not item:
         return None
-    try:
-        ts = datetime.fromisoformat(cache[key]["ts"])
-    except Exception:
-        return None
+    ts = datetime.fromisoformat(item["ts"])
     if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
         return None
-    return cache[key]["data"]
+    return item["data"]
 
 def cache_set(key, data):
     cache[key] = {"ts": datetime.now(UTC).isoformat(), "data": data}
+    if len(cache) > 50:  # ⬅️ ОБМЕЖЕННЯ CACHE
+        cache.clear()
     save_cache(cache)
 
 # ---------------- INDICATORS (MARKET) ----------------
@@ -178,13 +178,13 @@ def analyze(symbol, use_15m):
     support = float(df5["Low"].tail(60).min())
     resistance = float(df5["High"].tail(60).max())
 
-    score = 20
-    if trend == "КУПИТИ" and rsi < 55: score += 20
-    if trend == "ПРОДАТИ" and rsi > 45: score += 20
-    if trend == "КУПИТИ" and macd > 0: score += 20
-    if trend == "ПРОДАТИ" and macd < 0: score += 20
-    if trend == "КУПИТИ" and abs(price - support) < atr * 1.2: score += 20
-    if trend == "ПРОДАТИ" and abs(price - resistance) < atr * 1.2: score += 20
+    score = 50
+    if trend == "КУПИТИ" and rsi < 60: score += 15
+    if trend == "ПРОДАТИ" and rsi > 40: score += 15
+    if trend == "КУПИТИ" and macd > 0: score += 15
+    if trend == "ПРОДАТИ" and macd < 0: score += 15
+    if trend == "КУПИТИ" and abs(price - support) < atr * 1.2: score += 15
+    if trend == "ПРОДАТИ" and abs(price - resistance) < atr * 1.2: score += 15
 
     strength = min(score, 100)
 
@@ -587,7 +587,7 @@ def scan_cmd(msg):
             })
 
     if not results:
-        bot.send_message(msg.chat.id, "❌ No strong signals right now")
+        bot.send_message(msg.chat.id, "❌ Немає сигналів")
         return
 
     results.sort(key=lambda x: x["strength"], reverse=True)
@@ -602,7 +602,7 @@ def scan_cmd(msg):
             f"—"
         )
 
-    bot.send_message(msg.chat.id, "\n".join(out))
+    bot.send_message(msg.chat.id, "\n".join(results))
 
 
 # === OTC PHOTO ===
