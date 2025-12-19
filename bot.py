@@ -586,12 +586,12 @@ def scan_cmd(msg):
             skipped_payout += 1
             continue
 
-    try:
-        res = analyze(a["symbol"], use_15m)
-    except Exception as e:
-        print("ANALYZE ERROR:", a["symbol"], e)
-        no_data += 1
-        continue
+        try:
+            res = analyze(a["symbol"], use_15m)
+        except Exception as e:
+            print("ANALYZE ERROR:", a["symbol"], e)
+            no_data += 1
+            continue
             
         if res and res["strength"] >= min_strength:
             results.append({
@@ -608,8 +608,8 @@ def scan_cmd(msg):
             f"📉 Без даних (yfinance): {no_data}\n"
             f"⏭ Пропущено через payout: {skipped_payout}\n"
             f"❌ Сильних сигналів поки немає"
-    )
-    return
+        )
+        return
 
     results.sort(key=lambda x: x["strength"], reverse=True)
 
