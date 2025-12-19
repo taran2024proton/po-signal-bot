@@ -25,7 +25,7 @@ PAYOUT_MIN = 0.80
 EXPIRY_MIN = 3
 MAX_ASSETS = 15
 
-MODE = "conservative"
+MODE = "aggressive"
 THRESHOLDS = {
     "conservative": {"MIN_STRENGTH": 70, "USE_15M": True},
     "aggressive": {"MIN_STRENGTH": 60, "USE_15M": False},
@@ -584,6 +584,9 @@ def scan_cmd(msg):
             continue
 
         res = analyze(a["symbol"], use_15m)
+        if res is None:
+            no_data += 1
+            continue
         if res and res["strength"] >= min_strength:
             results.append({
                 "display": a["display"],
@@ -598,6 +601,7 @@ def scan_cmd(msg):
             f"ℹ️ Перевірено пар: {checked}\n"
             f"⏭ Пропущено через payout: {skipped_payout}\n"
             f"❌ Сильних сигналів поки немає"
+            f"📉 Без даних (yfinance): {no_data}\n"
     )
     return
 
