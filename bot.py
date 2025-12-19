@@ -21,9 +21,9 @@ ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
 CACHE_SECONDS = 120
 
-PAYOUT_MIN = 0.85
+PAYOUT_MIN = 0.80
 EXPIRY_MIN = 3
-MAX_ASSETS = 5
+MAX_ASSETS = 55
 
 MODE = "conservative"
 THRESHOLDS = {
