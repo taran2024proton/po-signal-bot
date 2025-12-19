@@ -23,7 +23,7 @@ CACHE_SECONDS = 120
 
 PAYOUT_MIN = 0.80
 EXPIRY_MIN = 3
-MAX_ASSETS = 55
+MAX_ASSETS = 21
 
 MODE = "conservative"
 THRESHOLDS = {
@@ -122,38 +122,6 @@ def get_assets():
             {"symbol":"USDCAD=X","display":"USD/CAD","payout":0.88},
             {"symbol":"USDCHF=X","display":"USD/CHF","payout":0.88},
             {"symbol":"USDJPY=X","display":"USD/JPY","payout":0.89},
-            {"symbol":"BTC-USD","display":"Bitcoin","payout":0.92},
-            {"symbol":"ETH-USD","display":"Ethereum","payout":0.91},
-            {"symbol":"DASH-USD","display":"Dash","payout":0.90},
-            {"symbol":"BCH-EUR","display":"BCH/EUR","payout":0.89},
-            {"symbol":"BCH-GBP","display":"BCH/GBP","payout":0.89},
-            {"symbol":"BCH-JPY","display":"BCH/JPY","payout":0.89},
-            {"symbol":"BTC-GBP","display":"BTC/GBP","payout":0.90},
-            {"symbol":"BTC-JPY","display":"BTC/JPY","payout":0.90},
-            {"symbol":"LINK-USD","display":"Chainlink","payout":0.90},
-            {"symbol":"BZ=F","display":"Brent Oil","payout":0.88},
-            {"symbol":"CL=F","display":"WTI Crude Oil","payout":0.88},
-            {"symbol":"SI=F","display":"Silver","payout":0.87},
-            {"symbol":"GC=F","display":"Gold","payout":0.89},
-            {"symbol":"NG=F","display":"Natural Gas","payout":0.85},
-            {"symbol":"PA=F","display":"Palladium spot","payout":0.86},
-            {"symbol":"PL=F","display":"Platinum spot","payout":0.86},
-            {"symbol":"AAPL","display":"Apple","payout":0.88},
-            {"symbol":"AXP","display":"American Express","payout":0.87},
-            {"symbol":"BA","display":"Boeing Company","payout":0.86},
-            {"symbol":"META","display":"Facebook (Meta)","payout":0.88},
-            {"symbol":"JNJ","display":"Johnson & Johnson","payout":0.87},
-            {"symbol":"JPM","display":"JPMorgan Chase","payout":0.88},
-            {"symbol":"MCD","display":"McDonald's","payout":0.87},
-            {"symbol":"MSFT","display":"Microsoft","payout":0.89},
-            {"symbol":"PFE","display":"Pfizer","payout":0.86},
-            {"symbol":"TSLA","display":"Tesla","payout":0.90},
-            {"symbol":"BABA","display":"Alibaba","payout":0.87},
-            {"symbol":"C","display":"Citigroup","payout":0.86},
-            {"symbol":"NFLX","display":"Netflix","payout":0.88},
-            {"symbol":"CSCO","display":"Cisco","payout":0.86},
-            {"symbol":"XOM","display":"ExxonMobil","payout":0.87},
-            {"symbol":"INTC","display":"Intel","payout":0.86}
         ]
         Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
         return assets
@@ -167,7 +135,7 @@ def fetch(symbol, interval):
 
     df = yf.download(
         symbol,
-        period="3d",
+        period="1d",
         interval=interval,
         auto_adjust=True,
         progress=False,
