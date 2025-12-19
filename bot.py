@@ -579,16 +579,19 @@ def scan_cmd(msg):
     results = []
 
     for a in assets[:MAX_ASSETS]:
+        print("ANALYZE:", a["symbol"])
         checked += 1
         
         if a["payout"] < PAYOUT_MIN:
             skipped_payout += 1
             continue
 
+    try:
         res = analyze(a["symbol"], use_15m)
-        if res is None:
-            no_data += 1
-            continue
+    except Exception as e:
+        print("ANALYZE ERROR:", a["symbol"], e)
+        no_data += 1
+        continue
             
         if res and res["strength"] >= min_strength:
             results.append({
