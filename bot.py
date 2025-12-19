@@ -277,7 +277,7 @@ def extract_candles_from_image(image_bytes, count=30):
                 open_coord = high_coord
                 close_coord = low_coord
                 
-            raw_candles.({
+            raw_candles.append({
                 "x": x,
                 # Тут ми повертаємо координати Y, трактуючи їх як "ціни" на екрані
                 "open": float(open_coord), 
