@@ -158,7 +158,7 @@ def fetch(symbol, interval):
 # ---------------- MARKET ANALYSIS ----------------
 def analyze(symbol, use_15m):
     df5 = fetch(symbol, "5m")
-    if df5 is None or len(df5) < 200:
+    if df5 is None or len(df5) < 120:
         return None
 
     close = df5["Close"]
@@ -190,7 +190,7 @@ def analyze(symbol, use_15m):
 
     if use_15m:
         df15 = fetch(symbol, "15m")
-        if df15 is None or len(df15) < 200:
+        if df15 is None or len(df15) < 120:
             return None
         t15 = "КУПИТИ" if ema_last(df15["Close"], 50) > ema_last(df15["Close"], 200) else "ПРОДАТИ"
         if t15 != trend:
@@ -565,7 +565,10 @@ def scan_cmd(msg):
         bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
         return
 
-    bot.send_message(msg.chat.id, "🔍 Scanning market...")
+    bot.send_message(msg.chat.id, "🔍 Сканую ринок...")
+    
+    checked = 0
+    skipped_payout = 0
 
     assets = get_assets()
     use_15m = THRESHOLDS[MODE]["USE_15M"]
@@ -574,7 +577,10 @@ def scan_cmd(msg):
     results = []
 
     for a in assets[:MAX_ASSETS]:
+        checked += 1
+        
         if a["payout"] < PAYOUT_MIN:
+            skipped_payout += 1
             continue
 
         res = analyze(a["symbol"], use_15m)
@@ -587,8 +593,13 @@ def scan_cmd(msg):
             })
 
     if not results:
-        bot.send_message(msg.chat.id, "❌ Немає сигналів")
-        return
+        bot.send_message(
+            msg.chat.id,
+            f"ℹ️ Перевірено пар: {checked}\n"
+            f"⏭ Пропущено через payout: {skipped_payout}\n"
+            f"❌ Сильних сигналів поки немає"
+    )
+    return
 
     results.sort(key=lambda x: x["strength"], reverse=True)
 
