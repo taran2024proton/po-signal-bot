@@ -620,8 +620,8 @@ def scan_cmd(msg):
     threading.Thread(target=process_market_scan, args=(msg.chat.id,)).start()
 
 def process_market_scan(chat_id):
-    """Ця функція виконує важкий аналіз у фоновому потоці"""
-    try:  
+    try:
+        print(f"DEBUG: Потік запущено для чату {chat_id}")
         checked = 0
         skipped_payout = 0
         no_data = 0
@@ -654,7 +654,6 @@ def process_market_scan(chat_id):
                     "payout": a["payout"]
                 })
 
-        # --- ТЕПЕР УСІ ВІДСТУПИ ПРАВИЛЬНІ (ВСЕРЕДИНІ ТRY) ---
         if not results:
             bot.send_message(
                 chat_id,
