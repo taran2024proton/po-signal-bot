@@ -128,27 +128,27 @@ def get_assets():
     #     return json.loads(Path(ASSETS_FILE).read_text())
     # except Exception:
         assets = [
-            {"symbol":"OANDA:GBP_JPY","display":"GBP/JPY"},
-            {"symbol":"OANDA:AUD_CAD","display":"AUD/CAD"},
-            {"symbol":"OANDA:AUD_CHF","display":"AUD/CHF"},
-            {"symbol":"OANDA:AUD_JPY","display":"AUD/JPY"},
-            {"symbol":"OANDA:AUD_USD","display":"AUD/USD"},
-            {"symbol":"OANDA:CAD_CHF","display":"CAD/CHF"},
-            {"symbol":"OANDA:CAD_JPY","display":"CAD/JPY"},
-            {"symbol":"OANDA:CHF_JPY","display":"CHF/JPY"},
-            {"symbol":"OANDA:EUR_AUD","display":"EUR/AUD"},
-            {"symbol":"OANDA:EUR_CAD","display":"EUR/CAD"},
-            {"symbol":"OANDA:EUR_CHF","display":"EUR/CHF"},
-            {"symbol":"OANDA:EUR_GBP","display":"EUR/GBP"},
-            {"symbol":"OANDA:EUR_USD","display":"EUR/USD"},
-            {"symbol":"OANDA:EUR_JPY","display":"EUR/JPY"},
-            {"symbol":"OANDA:GBP_AUD","display":"GBP/AUD"},
-            {"symbol":"OANDA:GBP_CHF","display":"GBP/CHF"},
-            {"symbol":"OANDA:GBP_USD","display":"GBP/USD"},
-            {"symbol":"OANDA:GBP_CAD","display":"GBP/CAD"},
-            {"symbol":"OANDA:USD_CAD","display":"USD/CAD"},
-            {"symbol":"OANDA:USD_CHF","display":"USD/CHF"},
-            {"symbol":"OANDA:USD_JPY","display":"USD/JPY"},
+            {"symbol":"FX:GBP_JPY","display":"GBP/JPY"},
+            {"symbol":"FX:AUD_CAD","display":"AUD/CAD"},
+            {"symbol":"FX:AUD_CHF","display":"AUD/CHF"},
+            {"symbol":"FX:AUD_JPY","display":"AUD/JPY"},
+            {"symbol":"FX:AUD_USD","display":"AUD/USD"},
+            {"symbol":"FX:CAD_CHF","display":"CAD/CHF"},
+            {"symbol":"FX:CAD_JPY","display":"CAD/JPY"},
+            {"symbol":"FX:CHF_JPY","display":"CHF/JPY"},
+            {"symbol":"FX:EUR_AUD","display":"EUR/AUD"},
+            {"symbol":"FX:EUR_CAD","display":"EUR/CAD"},
+            {"symbol":"FX:EUR_CHF","display":"EUR/CHF"},
+            {"symbol":"FX:EUR_GBP","display":"EUR/GBP"},
+            {"symbol":"FX:EUR_USD","display":"EUR/USD"},
+            {"symbol":"FX:EUR_JPY","display":"EUR/JPY"},
+            {"symbol":"FX:GBP_AUD","display":"GBP/AUD"},
+            {"symbol":"FX:GBP_CHF","display":"GBP/CHF"},
+            {"symbol":"FX:GBP_USD","display":"GBP/USD"},
+            {"symbol":"FX:GBP_CAD","display":"GBP/CAD"},
+            {"symbol":"FX:USD_CAD","display":"USD/CAD"},
+            {"symbol":"FX:USD_CHF","display":"USD/CHF"},
+            {"symbol":"FX:USD_JPY","display":"USD/JPY"},
         ]
         Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
         return assets
@@ -180,8 +180,8 @@ def fetch(symbol, interval):
         r = requests.get(url, params=params, timeout=5)
         data = r.json()
 
-        if not data or data.get("s") != "ok" or not data.get("c"):
-            print(f"DEBUG: No data for {symbol}. Reason: {data.get('s', 'Unknown')}")
+        if not data or data.get("s") != "ok":
+            print(f"DEBUG: {symbol} failed. Resp: {data}")
             return None
 
         df = pd.DataFrame({
