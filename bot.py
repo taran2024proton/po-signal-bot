@@ -9,6 +9,7 @@ import requests
 from datetime import datetime, timedelta, timezone
 import io
 import os
+import time
 
 import yfinance as yf
 import pandas as pd
@@ -158,36 +159,47 @@ def fetch(symbol, interval):
     cached = cache_get(key)
     if cached:
         return pd.read_json(cached)
-
+        
     try:
         import requests
-        url = "https://finnhub.io/api/v1/quote"
+        import time
+        
+        url = "https://finnhub.io/api/v1/stock/candle"
+        
+        to_time = int(time.time())
+        from_time = to_time - (120 * 300)
+        
         params = {
             "symbol": symbol.replace("=X", ""),
-            "token": os.getenv("FINNHUB_API_KEY")
+            "token": os.getenv("FINNHUB_API_KEY"),
+            "resolution": "5",
+            "from": from_time,
+            "to": to_time
         }
-        r = requests.get(url, params=params, timeout=3)
+        
+        r = requests.get(url, params=params, timeout=5)
         data = r.json()
-    except:
+
+        # Перевірка наявності даних
+        if not data or data.get("s") != "ok" or not data.get("c"):
+            print(f"DEBUG: No data for {symbol}. Reason: {data.get('s', 'Unknown')}")
+            return None
+
+        # ВИПРАВЛЕНО: Правильні відступи для створення DataFrame
+        df = pd.DataFrame({
+            "Open": data["o"],
+            "High": data["h"],
+            "Low": data["l"],
+            "Close": data["c"]
+        })
+
+        cache_set(key, df.to_json())
+        return df
+
+    except Exception as e:
+        print(f"ERROR in fetch for {symbol}: {e}")
         return None
-
-    if not data or data.get("c") is None:
-        return None
-
-    # ⬇️ ІМІТУЄМО DataFrame, ЯКИЙ РАНІШЕ ДАВАВ yfinance
-    row = {
-        "Open": data["o"],
-        "High": data["h"],
-        "Low": data["l"],
-        "Close": data["c"]
-    }
-
-    # analyze() очікує ~120 рядків
-    df = pd.DataFrame([row] * 120)
-
-    cache_set(key, df.to_json())
-    return df
-
+        
 # ---------------- MARKET ANALYSIS ----------------
 def analyze(symbol, use_15m):
     df5 = fetch(symbol, "5m")
@@ -595,6 +607,7 @@ def market_mode(msg):
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
+    """Ця функція спрацьовує миттєво, щоб уникнути SIGTERM на Render"""
     print(f"Command /signal or /scan from chat {msg.chat.id}")
     
     if USER_MODE.get(msg.chat.id) == "OTC":
@@ -602,64 +615,77 @@ def scan_cmd(msg):
         return
 
     bot.send_message(msg.chat.id, "🔍 Сканую ринок...")
-    
-    checked = 0
-    skipped_payout = 0
-    no_data = 0
 
-    assets = get_assets()
-    use_15m = THRESHOLDS[MODE]["USE_15M"]
-    min_strength = THRESHOLDS[MODE]["MIN_STRENGTH"]
+    # ЗАПУСКАЄМО АНАЛІЗ У ФОНІ
+    threading.Thread(target=process_market_scan, args=(msg.chat.id,)).start()
 
-    results = []
+def process_market_scan(chat_id):
+    """Ця функція виконує важкий аналіз у фоновому потоці"""
+    try:  
+        checked = 0
+        skipped_payout = 0
+        no_data = 0
+        results = []
 
-    for a in assets[:MAX_ASSETS]:
-        print("ANALYZE:", a["symbol"])
-        checked += 1
+        assets = get_assets()
+        use_15m = THRESHOLDS[MODE]["USE_15M"]
+        min_strength = THRESHOLDS[MODE]["MIN_STRENGTH"]
+
+        for a in assets[:MAX_ASSETS]:
+            print("ANALYZE:", a["symbol"])
+            checked += 1
         
-        if a["payout"] < PAYOUT_MIN:
-            skipped_payout += 1
-            continue
+            if a["payout"] < PAYOUT_MIN:
+                skipped_payout += 1
+                continue
 
-        try:
-            res = analyze(a["symbol"], use_15m)
-        except Exception as e:
-            print("ANALYZE ERROR:", a["symbol"], e)
-            no_data += 1
-            continue
+            try:
+                res = analyze(a["symbol"], use_15m)
+            except Exception as e:
+                print("ANALYZE ERROR:", a["symbol"], e)
+                no_data += 1
+                continue
             
-        if res and res["strength"] >= min_strength:
-            results.append({
-                "display": a["display"],
-                "trend": res["trend"],
-                "strength": res["strength"],
-                "payout": a["payout"]
-            })
+            if res and res["strength"] >= min_strength:
+                results.append({
+                    "display": a["display"],
+                    "trend": res["trend"],
+                    "strength": res["strength"],
+                    "payout": a["payout"]
+                })
 
-    if not results:
-        bot.send_message(
-            msg.chat.id,
-            f"ℹ️ Перевірено пар: {checked}\n"
-            f"📉 Без даних (yfinance): {no_data}\n"
-            f"⏭ Пропущено через payout: {skipped_payout}\n"
-            f"❌ Сильних сигналів поки немає"
-        )
-        return
+        # --- ТЕПЕР УСІ ВІДСТУПИ ПРАВИЛЬНІ (ВСЕРЕДИНІ ТRY) ---
+        if not results:
+            bot.send_message(
+                chat_id,
+                f"ℹ️ Перевірено пар: {checked}\n"
+                f"📉 Без даних (Finnhub): {no_data}\n"
+                f"⏭ Пропущено через payout: {skipped_payout}\n"
+                f"❌ Сильних сигналів поки немає"
+            )
+            return
 
-    results.sort(key=lambda x: x["strength"], reverse=True)
+        results.sort(key=lambda x: x["strength"], reverse=True)
 
-    out = []
-    for r in results:
-        out.append(
-            f"📌 <b><code>{r['display']}</code></b>\n"
-            f"🔔 {r['trend']} | {r['strength']}%\n"
-            f"💰 Payout {int(r['payout']*100)}%\n"
-            f"⏱ Expiry {EXPIRY_MIN} хв\n"
-            f"—"
-        )
+        out = []
+        for r in results:
+            out.append(
+                f"📌 <b><code>{r['display']}</code></b>\n"
+                f"🔔 {r['trend']} | {r['strength']}%\n"
+                f"💰 Payout {int(r['payout']*100)}%\n"
+                f"⏱ Expiry {EXPIRY_MIN} хв\n"
+                f"—"
+            )
 
-    bot.send_message(msg.chat.id, "\n".join(out))
-
+        bot.send_message(chat_id, "\n".join(out), parse_mode="HTML")
+        print(f"DEBUG: Сигнали успішно надіслані в чат {chat_id}") 
+        
+    except Exception as e:
+        print(f"CRITICAL ERROR in background thread: {e}")
+        try:
+            bot.send_message(chat_id, "⚠️ Сталася помилка під час аналізу.")
+        except:
+            pass
 
 # === OTC PHOTO ===
 @bot.message_handler(content_types=["photo"])
