@@ -4,9 +4,10 @@
 
 import json
 import threading
-from pathlib import Path
+from pathlib import Path, import requests
 from datetime import datetime, timedelta, timezone
 import io
+import os
 
 import yfinance as yf
 import pandas as pd
@@ -67,6 +68,30 @@ def cache_set(key, data):
     if len(cache) > 50:  # ⬅️ ОБМЕЖЕННЯ CACHE
         cache.clear()
     save_cache(cache)
+    
+# ---------------- REALTIME MARKET DATA ----------------
+def fetch_realtime(symbol):
+    try:
+        url = "https://finnhub.io/api/v1/quote"
+        params = {
+            "symbol": symbol.replace("=X", ""),
+            "token": os.getenv("FINNHUB_API_KEY")
+        }
+        r = requests.get(url, params=params, timeout=3)
+        data = r.json()
+
+        if not data or data.get("c") is None:
+            return None
+
+        # Імітуємо одну "свіжу" свічку
+        return {
+            "Close": data["c"],
+            "High": data["h"],
+            "Low": data["l"],
+            "Open": data["o"]
+        }
+    except:
+        return None
 
 # ---------------- INDICATORS (MARKET) ----------------
 def ema_last(series, period):
@@ -133,26 +158,33 @@ def fetch(symbol, interval):
     if cached:
         return pd.read_json(cached)
 
-    df = yf.download(
-        symbol,
-        period="1d",
-        interval=interval,
-        auto_adjust=True,
-        progress=False,
-    )
-
-    if df is None or df.empty:
+    try:
+        import requests
+        url = "https://finnhub.io/api/v1/quote"
+        params = {
+            "symbol": symbol.replace("=X", ""),
+            "token": os.getenv("FINNHUB_API_KEY")
+        }
+        r = requests.get(url, params=params, timeout=3)
+        data = r.json()
+    except:
         return None
 
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-
-    required = {"Open", "High", "Low", "Close"}
-    if not required.issubset(df.columns):
+    if not data or data.get("c") is None:
         return None
 
-    df = df.reset_index()
-    cache_set(key, df.to_json(date_format="iso"))
+    # ⬇️ ІМІТУЄМО DataFrame, ЯКИЙ РАНІШЕ ДАВАВ yfinance
+    row = {
+        "Open": data["o"],
+        "High": data["h"],
+        "Low": data["l"],
+        "Close": data["c"]
+    }
+
+    # analyze() очікує ~120 рядків
+    df = pd.DataFrame([row] * 120)
+
+    cache_set(key, df.to_json())
     return df
 
 # ---------------- MARKET ANALYSIS ----------------
