@@ -221,6 +221,8 @@ def analyze(symbol, use_15m):
 
     strength = min(score, 100)
 
+    print(f"ANALYZE {symbol}: trend={trend}, strength={strength}, price={price}")
+
     if use_15m:
         df15 = fetch(symbol, "15m")
         if df15 is None or len(df15) < 120:
