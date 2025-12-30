@@ -124,9 +124,9 @@ def atr_last(df, period=14):
     
 # ---------------- ASSETS ----------------
 def get_assets():
-    try:
-        return json.loads(Path(ASSETS_FILE).read_text())
-    except Exception:
+    # try:
+    #     return json.loads(Path(ASSETS_FILE).read_text())
+    # except Exception:
         assets = [
             {"symbol":"OANDA:GBP_JPY","display":"GBP/JPY"},
             {"symbol":"OANDA:AUD_CAD","display":"AUD/CAD"},
