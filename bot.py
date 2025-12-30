@@ -128,27 +128,27 @@ def get_assets():
         return json.loads(Path(ASSETS_FILE).read_text())
     except Exception:
         assets = [
-            {"symbol":"GBPJPY=X","display":"GBP/JPY","payout":0.87},
-            {"symbol":"AUDCAD=X","display":"AUD/CAD","payout":0.86},
-            {"symbol":"AUDCHF=X","display":"AUD/CHF","payout":0.86},
-            {"symbol":"AUDJPY=X","display":"AUD/JPY","payout":0.87},
-            {"symbol":"AUDUSD=X","display":"AUD/USD","payout":0.88},
-            {"symbol":"CADCHF=X","display":"CAD/CHF","payout":0.85},
-            {"symbol":"CADJPY=X","display":"CAD/JPY","payout":0.86},
-            {"symbol":"CHFJPY=X","display":"CHF/JPY","payout":0.86},
-            {"symbol":"EURAUD=X","display":"EUR/AUD","payout":0.87},
-            {"symbol":"EURCAD=X","display":"EUR/CAD","payout":0.87},
-            {"symbol":"EURCHF=X","display":"EUR/CHF","payout":0.88},
-            {"symbol":"EURGBP=X","display":"EUR/GBP","payout":0.89},
-            {"symbol":"EURUSD=X","display":"EUR/USD","payout":0.90},
-            {"symbol":"EURJPY=X","display":"EUR/JPY","payout":0.88},
-            {"symbol":"GBPAUD=X","display":"GBP/AUD","payout":0.87},
-            {"symbol":"GBPCHF=X","display":"GBP/CHF","payout":0.87},
-            {"symbol":"GBPUSD=X","display":"GBP/USD","payout":0.89},
-            {"symbol":"GBPCAD=X","display":"GBP/CAD","payout":0.86},
-            {"symbol":"USDCAD=X","display":"USD/CAD","payout":0.88},
-            {"symbol":"USDCHF=X","display":"USD/CHF","payout":0.88},
-            {"symbol":"USDJPY=X","display":"USD/JPY","payout":0.89},
+            {"symbol":"OANDA:GBP_JPY","display":"GBP/JPY"},
+            {"symbol":"OANDA:AUDCAD","display":"AUD/CAD"},
+            {"symbol":"OANDA:AUDCHF","display":"AUD/CHF"},
+            {"symbol":"OANDA:AUDJPY","display":"AUD/JPY"},
+            {"symbol":"OANDA:AUDUSD","display":"AUD/USD"},
+            {"symbol":"OANDA:CADCHF","display":"CAD/CHF"},
+            {"symbol":"OANDA:CADJPY","display":"CAD/JPY"},
+            {"symbol":"OANDA:CHFJPY","display":"CHF/JPY"},
+            {"symbol":"OANDA:EURAUD","display":"EUR/AUD"},
+            {"symbol":"OANDA:EURCAD","display":"EUR/CAD"},
+            {"symbol":"OANDA:EURCHF","display":"EUR/CHF"},
+            {"symbol":"OANDA:EURGBP","display":"EUR/GBP"},
+            {"symbol":"OANDA:EURUSD","display":"EUR/USD"},
+            {"symbol":"OANDA:EURJPY","display":"EUR/JPY"},
+            {"symbol":"OANDA:GBPAUD","display":"GBP/AUD"},
+            {"symbol":"OANDA:GBPCHF","display":"GBP/CHF"},
+            {"symbol":"OANDA:GBPUSD","display":"GBP/USD"},
+            {"symbol":"OANDA:GBPCAD","display":"GBP/CAD"},
+            {"symbol":"OANDA:USDCAD","display":"USD/CAD"},
+            {"symbol":"OANDA:USDCHF","display":"USD/CHF"},
+            {"symbol":"OANDA:USDJPY","display":"USD/JPY"},
         ]
         Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
         return assets
@@ -623,7 +623,6 @@ def process_market_scan(chat_id):
     try:
         print(f"DEBUG: Потік запущено для чату {chat_id}")
         checked = 0
-        skipped_payout = 0
         no_data = 0
         results = []
 
@@ -634,10 +633,6 @@ def process_market_scan(chat_id):
         for a in assets[:MAX_ASSETS]:
             print("ANALYZE:", a["symbol"])
             checked += 1
-        
-            if a["payout"] < PAYOUT_MIN:
-                skipped_payout += 1
-                continue
 
             try:
                 res = analyze(a["symbol"], use_15m)
@@ -651,7 +646,6 @@ def process_market_scan(chat_id):
                     "display": a["display"],
                     "trend": res["trend"],
                     "strength": res["strength"],
-                    "payout": a["payout"]
                 })
 
         if not results:
@@ -659,7 +653,6 @@ def process_market_scan(chat_id):
                 chat_id,
                 f"ℹ️ Перевірено пар: {checked}\n"
                 f"📉 Без даних (Finnhub): {no_data}\n"
-                f"⏭ Пропущено через payout: {skipped_payout}\n"
                 f"❌ Сильних сигналів поки немає"
             )
             return
@@ -671,7 +664,6 @@ def process_market_scan(chat_id):
             out.append(
                 f"📌 <b><code>{r['display']}</code></b>\n"
                 f"🔔 {r['trend']} | {r['strength']}%\n"
-                f"💰 Payout {int(r['payout']*100)}%\n"
                 f"⏱ Expiry {EXPIRY_MIN} хв\n"
                 f"—"
             )
