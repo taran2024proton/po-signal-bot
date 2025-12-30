@@ -4,7 +4,8 @@
 
 import json
 import threading
-from pathlib import Path, import requests
+from pathlib import Path
+import requests
 from datetime import datetime, timedelta, timezone
 import io
 import os
