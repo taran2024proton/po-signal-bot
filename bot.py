@@ -164,7 +164,7 @@ def fetch(symbol, interval):
         import requests
         import time
         
-        url = "https://finnhub.io/api/v1/stock/candle"
+        url = "https://finnhub.io/api/v1/forex/candle"
         
         to_time = int(time.time())
         from_time = to_time - (120 * 300)
