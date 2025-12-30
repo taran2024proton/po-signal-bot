@@ -221,8 +221,6 @@ def analyze(symbol, use_15m):
 
     strength = min(score, 100)
 
-    print(f"ANALYZE {symbol}: trend={trend}, strength={strength}, price={price}")
-
     if use_15m:
         df15 = fetch(symbol, "15m")
         if df15 is None or len(df15) < 120:
@@ -230,6 +228,8 @@ def analyze(symbol, use_15m):
         t15 = "КУПИТИ" if ema_last(df15["Close"], 50) > ema_last(df15["Close"], 200) else "ПРОДАТИ"
         if t15 != trend:
             return None
+            
+    print(f"ANALYZE {symbol}: trend={trend}, strength={strength}, price={price}")
 
     return {
         "symbol": symbol,
