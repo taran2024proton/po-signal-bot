@@ -1,30 +1,31 @@
-# ===============================================================
-# bot.py — FINAL STABLE (MARKET UNCHANGED + OTC SCREEN ANALYSIS)
-# ===============================================================
+# =====================
+# bot.py — FINAL STABLE
+# =====================
 
 import json
 import threading
 from pathlib import Path
-import requests
 from datetime import datetime, timedelta, timezone
 import io
 import os
 import time
 
-import yfinance as yf
+import requests
 import pandas as pd
 import telebot
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
 
 # ---------------- CONFIG ----------------
-TOKEN = "8517986396:AAENPrASLsQlLu21BxG-jKIYZEaEL-RKxYs"
+TOKEN = os.getenv("TELEGRAM_TOKEN")
+FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+
 WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com/webhook"
 
 ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
 CACHE_SECONDS = 120
 
-PAYOUT_MIN = 0.80
 EXPIRY_MIN = 5
 MAX_ASSETS = 15
 
@@ -60,24 +61,47 @@ def cache_get(key):
     item = cache.get(key)
     if not item:
         return None
-    ts = datetime.fromisoformat(item["ts"])
-    if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
+
+    try:
+        ts = datetime.fromisoformat(item["ts"])
+        if ts.tzinfo is None:
+            ts = ts.replace(tzinfo=UTC)
+    except Exception:
         return None
+
+    if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
+        cache.pop(key, None)
+        return None
+
     return item["data"]
 
 def cache_set(key, data):
-    cache[key] = {"ts": datetime.now(UTC).isoformat(), "data": data}
-    if len(cache) > 50:  # ⬅️ ОБМЕЖЕННЯ CACHE
-        cache.clear()
+    cache[key] = {
+        "ts": datetime.now(UTC).isoformat(),
+        "data": data
+    }
+
+    if len(cache) > 50:
+        oldest_key = min(
+            cache.items(),
+            key=lambda x: x[1]["ts"]
+        )[0]
+        cache.pop(oldest_key, None)
+
     save_cache(cache)
     
 # ---------------- REALTIME MARKET DATA ----------------
 def fetch_realtime(symbol):
+    token = os.getenv("FINNHUB_API_KEY")
+    if not token:
+        print("ERROR: FINNHUB_API_KEY not set")
+        return None
+
     try:
         url = "https://finnhub.io/api/v1/quote"
         params = {
             "symbol": symbol.replace("=X", ""),
-            "token": os.getenv("FINNHUB_API_KEY")
+            "token": token
         }
         r = requests.get(url, params=params, timeout=3)
         data = r.json()
@@ -85,14 +109,14 @@ def fetch_realtime(symbol):
         if not data or data.get("c") is None:
             return None
 
-        # Імітуємо одну "свіжу" свічку
         return {
             "Close": data["c"],
             "High": data["h"],
             "Low": data["l"],
             "Open": data["o"]
         }
-    except:
+    except Exception as e:
+        print(f"ERROR in fetch_realtime: {e}")
         return None
 
 # ---------------- INDICATORS (MARKET) ----------------
@@ -599,9 +623,26 @@ def otc_mode(msg):
         
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
-    print(f"Command /market from chat {msg.chat.id}")
     USER_MODE[msg.chat.id] = "MARKET"
-    bot.send_message(msg.chat.id, "✅ MARKET MODE")
+
+    assets = get_assets()
+    kb = InlineKeyboardMarkup(row_width=2)
+
+    for a in assets:
+        kb.add(
+            InlineKeyboardButton(
+                text=a["display"],
+                callback_data=f"MARKET_PAIR:{a['symbol']}"
+            )
+        )
+
+    bot.send_message(
+        msg.chat.id,
+        "📊 <b>MARKET MODE</b>\n"
+        "Оберіть валютну пару:",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
@@ -616,6 +657,47 @@ def scan_cmd(msg):
 
     # ЗАПУСКАЄМО АНАЛІЗ У ФОНІ
     threading.Thread(target=process_market_scan, args=(msg.chat.id,)).start()
+
+@bot.callback_query_handler(func=lambda call: call.data.startswith("MARKET_PAIR:"))
+def market_pair_selected(call):
+    chat_id = call.message.chat.id
+
+    if USER_MODE.get(chat_id) != "MARKET":
+        bot.answer_callback_query(call.id, "Не MARKET режим")
+        return
+
+    symbol = call.data.replace("MARKET_PAIR:", "")
+    display = symbol.replace("FX:", "").replace("_", "/")
+
+    bot.answer_callback_query(call.id)
+    bot.send_message(chat_id, f"🔍 Аналізую <b>{display}</b>...", parse_mode="HTML")
+
+    use_15m = THRESHOLDS[MODE]["USE_15M"]
+    min_strength = THRESHOLDS[MODE]["MIN_STRENGTH"]
+
+    try:
+        res = analyze(symbol, use_15m)
+    except Exception as e:
+        print("ANALYZE ERROR:", e)
+        bot.send_message(chat_id, "❌ Помилка аналізу")
+        return
+
+    if not res or res["strength"] < min_strength:
+        bot.send_message(
+            chat_id,
+            f"❌ По <code>{display}</code> сильного сигналу немає",
+            parse_mode="HTML"
+        )
+        return
+
+    bot.send_message(
+        chat_id,
+        f"🔥 <b>MARKET SIGNAL</b>\n"
+        f"📌 <code>{display}</code>\n"
+        f"🔔 {res['trend']} | {res['strength']}%\n"
+        f"⏱ Expiry {EXPIRY_MIN} хв",
+        parse_mode="HTML"
+    )
 
 def process_market_scan(chat_id):
     try:
