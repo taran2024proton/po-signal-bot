@@ -740,7 +740,7 @@ def analyze_market(candles):
         return res
 
     # Пріоритет 3: Флет та OTC розвороти
-     res, msg = otc_analyze(candles)
+    res, msg = otc_analyze(candles)
     if res:
         res["source"] = "otc"
         return res
