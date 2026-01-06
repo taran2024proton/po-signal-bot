@@ -148,64 +148,145 @@ def atr_last(df, period=14):
     
 # ---------------- ASSETS ----------------
 def get_assets():
-    # try:
-    #     return json.loads(Path(ASSETS_FILE).read_text())
-    # except Exception:
-        assets = [
-            {"symbol":"FX:GBP_JPY","display":"GBP/JPY"},
-            {"symbol":"FX:AUD_CAD","display":"AUD/CAD"},
-            {"symbol":"FX:AUD_CHF","display":"AUD/CHF"},
-            {"symbol":"FX:AUD_JPY","display":"AUD/JPY"},
-            {"symbol":"FX:AUD_USD","display":"AUD/USD"},
-            {"symbol":"FX:CAD_CHF","display":"CAD/CHF"},
-            {"symbol":"FX:CAD_JPY","display":"CAD/JPY"},
-            {"symbol":"FX:CHF_JPY","display":"CHF/JPY"},
-            {"symbol":"FX:EUR_AUD","display":"EUR/AUD"},
-            {"symbol":"FX:EUR_CAD","display":"EUR/CAD"},
-            {"symbol":"FX:EUR_CHF","display":"EUR/CHF"},
-            {"symbol":"FX:EUR_GBP","display":"EUR/GBP"},
-            {"symbol":"FX:EUR_USD","display":"EUR/USD"},
-            {"symbol":"FX:EUR_JPY","display":"EUR/JPY"},
-            {"symbol":"FX:GBP_AUD","display":"GBP/AUD"},
-            {"symbol":"FX:GBP_CHF","display":"GBP/CHF"},
-            {"symbol":"FX:GBP_USD","display":"GBP/USD"},
-            {"symbol":"FX:GBP_CAD","display":"GBP/CAD"},
-            {"symbol":"FX:USD_CAD","display":"USD/CAD"},
-            {"symbol":"FX:USD_CHF","display":"USD/CHF"},
-            {"symbol":"FX:USD_JPY","display":"USD/JPY"},
-        ]
-        Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
-        return assets
+    assets = [
+        # Валютні пари (FX)
+        {"symbol": "FX:GBP_JPY", "display": "GBP/JPY", "category": "forex"},
+        {"symbol": "FX:AUD_CAD", "display": "AUD/CAD", "category": "forex"},
+        {"symbol": "FX:AUD_CHF", "display": "AUD/CHF", "category": "forex"},
+        {"symbol": "FX:AUD_JPY", "display": "AUD/JPY", "category": "forex"},
+        {"symbol": "FX:AUD_USD", "display": "AUD/USD", "category": "forex"},
+        {"symbol": "FX:CAD_CHF", "display": "CAD/CHF", "category": "forex"},
+        {"symbol": "FX:CAD_JPY", "display": "CAD/JPY", "category": "forex"},
+        {"symbol": "FX:CHF_JPY", "display": "CHF/JPY", "category": "forex"},
+        {"symbol": "FX:EUR_AUD", "display": "EUR/AUD", "category": "forex"},
+        {"symbol": "FX:EUR_CAD", "display": "EUR/CAD", "category": "forex"},
+        {"symbol": "FX:EUR_CHF", "display": "EUR/CHF", "category": "forex"},
+        {"symbol": "FX:EUR_GBP", "display": "EUR/GBP", "category": "forex"},
+        {"symbol": "FX:EUR_USD", "display": "EUR/USD", "category": "forex"},
+        {"symbol": "FX:EUR_JPY", "display": "EUR/JPY", "category": "forex"},
+        {"symbol": "FX:GBP_AUD", "display": "GBP/AUD", "category": "forex"},
+        {"symbol": "FX:GBP_CHF", "display": "GBP/CHF", "category": "forex"},
+        {"symbol": "FX:GBP_USD", "display": "GBP/USD", "category": "forex"},
+        {"symbol": "FX:GBP_CAD", "display": "GBP/CAD", "category": "forex"},
+        {"symbol": "FX:USD_CAD", "display": "USD/CAD", "category": "forex"},
+        {"symbol": "FX:USD_CHF", "display": "USD/CHF", "category": "forex"},
+        {"symbol": "FX:USD_JPY", "display": "USD/JPY", "category": "forex"},
+
+        # Акції (Stocks)
+        {"symbol": "AAPL", "display": "Apple", "category": "stocks"},
+        {"symbol": "BA", "display": "Boeing Company", "category": "stocks"},
+        {"symbol": "JPM", "display": "JPMorgan Chase & Co", "category": "stocks"},
+        {"symbol": "MCD", "display": "McDonald's", "category": "stocks"},
+        {"symbol": "MSFT", "display": "Microsoft", "category": "stocks"},
+        {"symbol": "AXP", "display": "American Express", "category": "stocks"},
+        {"symbol": "JNJ", "display": "Johnson & Johnson", "category": "stocks"},
+        {"symbol": "PFE", "display": "Pfizer Inc", "category": "stocks"},
+        {"symbol": "XOM", "display": "ExxonMobil", "category": "stocks"},
+        {"symbol": "CSCO", "display": "Cisco", "category": "stocks"},
+        {"symbol": "META", "display": "Facebook Inc (Meta)", "category": "stocks"},
+        {"symbol": "INTC", "display": "Intel", "category": "stocks"},
+        {"symbol": "NFLX", "display": "Netflix", "category": "stocks"},
+        {"symbol": "BABA", "display": "Alibaba", "category": "stocks"},
+        {"symbol": "TSLA", "display": "Tesla", "category": "stocks"},
+        {"symbol": "C", "display": "Citigroup Inc", "category": "stocks"},
+
+        # Криптовалюти (Crypto)
+        {"symbol": "BINANCE:BTCUSDT", "display": "Bitcoin", "category": "crypto"},
+        {"symbol": "BINANCE:DASHUSDT", "display": "Dash", "category": "crypto"},
+        {"symbol": "BINANCE:ETHUSDT", "display": "Ethereum", "category": "crypto"},
+        {"symbol": "BINANCE:BCHUSDT", "display": "Bitcoin Cash (BCH/USD)", "category": "crypto"},
+        {"symbol": "BINANCE:BCHEUR", "display": "Bitcoin Cash (BCH/EUR)", "category": "crypto"},
+        {"symbol": "BINANCE:BCHGBP", "display": "Bitcoin Cash (BCH/GBP)", "category": "crypto"},
+        {"symbol": "BINANCE:BCHJPY", "display": "Bitcoin Cash (BCH/JPY)", "category": "crypto"},
+        {"symbol": "BINANCE:BTCGBP", "display": "Bitcoin (BTC/GBP)", "category": "crypto"},
+        {"symbol": "BINANCE:BTCJPY", "display": "Bitcoin (BTC/JPY)", "category": "crypto"},
+        {"symbol": "BINANCE:LINKUSDT", "display": "Chainlink", "category": "crypto"},
+
+        # Індекси (Indices)
+        {"symbol": "INDEX:AUS200", "display": "AUS 200", "category": "indices"},
+        {"symbol": "INDEX:US100", "display": "US100", "category": "indices"},
+        {"symbol": "INDEX:E35EUR", "display": "E35EUR", "category": "indices"},
+        {"symbol": "INDEX:100GBP", "display": "100GBP", "category": "indices"},
+        {"symbol": "INDEX:F40EUR", "display": "F40/EUR", "category": "indices"},
+        {"symbol": "INDEX:JPN225", "display": "JPN225", "category": "indices"},
+        {"symbol": "INDEX:D30EUR", "display": "D30/EUR", "category": "indices"},
+        {"symbol": "INDEX:E50EUR", "display": "E50/EUR", "category": "indices"},
+        {"symbol": "INDEX:SP500", "display": "SP500", "category": "indices"},
+        {"symbol": "INDEX:DJI30", "display": "DJI30", "category": "indices"},
+        {"symbol": "INDEX:AEX25", "display": "AEX 25", "category": "indices"},
+        {"symbol": "INDEX:CAC40", "display": "CAC 40", "category": "indices"},
+        {"symbol": "INDEX:HONGKONG33", "display": "HONG KONG 33", "category": "indices"},
+        {"symbol": "INDEX:SMI20", "display": "SMI 20", "category": "indices"},
+    ]
+    Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
+    return assets
 
 # ---------------- DATA (MARKET) ----------------
-def fetch(symbol, interval):
-    key = f"{symbol}_{interval}"
-    cached = cache_get(key)
+
+RESOLUTION_MAP = {
+    "1m": "1",
+    "5m": "5",
+    "15m": "15",
+    "1h": "60"
+}
+
+CANDLES_BACK = {
+    "1": 300,
+    "5": 300,
+    "15": 200,
+    "60": 120
+}
+
+ENDPOINTS = {
+    "forex": "https://finnhub.io/api/v1/forex/candle",
+    "crypto": "https://finnhub.io/api/v1/crypto/candle",
+    "stock": "https://finnhub.io/api/v1/stock/candle",
+    "index": "https://finnhub.io/api/v1/index/candle",
+}
+
+
+def detect_market_type(symbol: str) -> str:
+    if symbol.startswith("FX:"):
+        return "forex"
+    if symbol.startswith("BINANCE:"):
+        return "crypto"
+    if symbol.startswith("INDEX:"):
+        return "index"
+    return "stock"
+
+
+def fetch(symbol: str, interval: str):
+    resolution = RESOLUTION_MAP.get(interval, "5")
+    market_type = detect_market_type(symbol)
+    endpoint = ENDPOINTS.get(market_type)
+
+    if not endpoint:
+        print(f"DEBUG: Unsupported market type for {symbol}")
+        return None
+
+    cache_key = f"{symbol}_{interval}"
+    cached = cache_get(cache_key)
     if cached:
         return pd.read_json(cached)
-        
+
     try:
-        import requests
-        import time
-        
-        url = "https://finnhub.io/api/v1/forex/candle"
-        
-        to_time = int(time.time())
-        from_time = to_time - (120 * 300)
-        
+        now = int(time.time())
+        candles = CANDLES_BACK.get(resolution, 300)
+        from_time = now - (candles * int(resolution) * 60)
+
         params = {
             "symbol": symbol,
-            "token": os.getenv("FINNHUB_API_KEY"),
-            "resolution": "5",
+            "resolution": resolution,
             "from": from_time,
-            "to": to_time
+            "to": now,
+            "token": os.getenv("FINNHUB_API_KEY")
         }
-        
-        r = requests.get(url, params=params, timeout=5)
+
+        r = requests.get(endpoint, params=params, timeout=5)
         data = r.json()
 
         if not data or data.get("s") != "ok":
-            print(f"DEBUG: {symbol} failed. Resp: {data}")
+            print(f"DEBUG FETCH FAIL {symbol} [{market_type}] → {data}")
             return None
 
         df = pd.DataFrame({
@@ -215,56 +296,98 @@ def fetch(symbol, interval):
             "Close": data["c"]
         })
 
-        cache_set(key, df.to_json())
+        if df.empty or len(df) < 50:
+            print(f"DEBUG: Not enough candles for {symbol}")
+            return None
+
+        cache_set(cache_key, df.to_json())
         return df
 
     except Exception as e:
-        print(f"ERROR in fetch for {symbol}: {e}")
+        print(f"ERROR fetch({symbol}): {e}")
         return None
-        
+
 # ---------------- MARKET ANALYSIS ----------------
+
 def analyze(symbol, use_15m):
     df5 = fetch(symbol, "5m")
-    if df5 is None or len(df5) < 120:
+    if df5 is None or len(df5) < 200:
         return None
 
     close = df5["Close"]
+    high = df5["High"]
+    low = df5["Low"]
+
     price = float(close.iloc[-1])
 
     ema50 = ema_last(close, 50)
     ema200 = ema_last(close, 200)
-    trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
-
-    rsi = rsi_last(close, 5)
+    rsi = rsi_last(close, 7)
     macd = macd_hist_last(close)
     atr = atr_last(df5)
 
-    if atr == 0 or pd.isna(atr): 
+    if atr is None or atr == 0 or pd.isna(atr):
         return None
 
-    support = float(df5["Low"].tail(60).min())
-    resistance = float(df5["High"].tail(60).max())
+    ema_distance = abs(ema50 - ema200)
+    if ema_distance < atr * 0.3:
+        return None
 
-    score = 50
-    if trend == "КУПИТИ" and rsi < 60: score += 15
-    if trend == "ПРОДАТИ" and rsi > 40: score += 15
-    if trend == "КУПИТИ" and macd > 0: score += 15
-    if trend == "ПРОДАТИ" and macd < 0: score += 15
-    if trend == "КУПИТИ" and abs(price - support) < atr * 1.2: score += 15
-    if trend == "ПРОДАТИ" and abs(price - resistance) < atr * 1.2: score += 15
+    trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
+
+    lookback = 80
+    support = float(low.tail(lookback).min())
+    resistance = float(high.tail(lookback).max())
+
+    if (resistance - support) < atr * 1.5:
+        return None
+
+    if trend == "КУПИТИ" and price > resistance + atr * 0.3:
+        return None
+    if trend == "ПРОДАТИ" and price < support - atr * 0.3:
+        return None
+
+    score = 40
+
+    if trend == "КУПИТИ" and 35 < rsi < 50:
+        score += 15
+    if trend == "ПРОДАТИ" and 50 < rsi < 65:
+        score += 15
+
+    if trend == "КУПИТИ" and macd > 0:
+        score += 15
+    if trend == "ПРОДАТИ" and macd < 0:
+        score += 15
+
+    if trend == "КУПИТИ" and abs(price - support) < atr * 1.1:
+        score += 20
+    if trend == "ПРОДАТИ" and abs(price - resistance) < atr * 1.1:
+        score += 20
+
+    if ema_distance > 0.08:
+        score += 10
 
     strength = min(score, 100)
 
+    if strength < 65:
+        return None
+
     if use_15m:
         df15 = fetch(symbol, "15m")
-        if df15 is None or len(df15) < 120:
+        if df15 is None or len(df15) < 200:
             return None
-        t15 = "КУПИТИ" if ema_last(df15["Close"], 50) > ema_last(df15["Close"], 200) else "ПРОДАТИ"
-        if t15 != trend:
-            return None
-            
-    print(f"ANALYZE {symbol}: trend={trend}, strength={strength}, price={price}")
 
+        ema50_15 = ema_last(df15["Close"], 50)
+        ema200_15 = ema_last(df15["Close"], 200)
+        trend15 = "КУПИТИ" if ema50_15 > ema200_15 else "ПРОДАТИ"
+
+        if trend15 != trend:
+            return None
+
+    print(
+        f"ANALYZE {symbol} | {trend} | strength={strength} | price={price:.5f} | RSI={rsi:.1f}"
+    )
+    
     return {
         "symbol": symbol,
         "trend": trend,
@@ -272,6 +395,8 @@ def analyze(symbol, use_15m):
         "strength": strength,
         "support": support,
         "resistance": resistance,
+        "rsi": rsi,
+        "atr": atr
     }
 
 # ================= OTC SCREEN ANALYSIS =================
@@ -280,24 +405,27 @@ import cv2
 import numpy as np
 from PIL import Image
 import io
+import math
 
 # ---------- GLOBAL HELPERS (Допоміжні функції) ----------
 
 def body(c):
     return abs(c["close"] - c["open"])
 
+
 def rng(c):
-    return max(0.000001, c["high"] - c["low"])
+    return max(1e-6, c["high"] - c["low"])
+
 
 def upper_shadow(c):
-    return c["high"] - max(c["open"], c["close"])
+    return max(0.0, c["high"] - max(c["open"], c["close"]))
+
 
 def lower_shadow(c):
-    return min(c["open"], c["close"]) - c["low"]
-
-# ------------------------------------------------------
+    return max(0.0, min(c["open"], c["close"]) - c["low"])
+    
 # 1. ВИТЯГ СВІЧОК (ВИПРАВЛЕНО РОЗПІЗНАВАННЯ)
-# ------------------------------------------------------
+
 def extract_candles_from_image(image_bytes, count=30):
     import cv2
     import numpy as np
@@ -306,73 +434,87 @@ def extract_candles_from_image(image_bytes, count=30):
 
     img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
     img = np.array(img)
-    h_img, w_img, _ = img.shape
 
     hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
 
-    # --- ВИПРАВЛЕННЯ 1: Повний діапазон HSV для червоного та зеленого ---
-    # Зелений
-    mask_green = cv2.inRange(hsv, np.array([40, 50, 50]), np.array([90, 255, 255]))
+    # Маски кольорів (Pocket Option)
+    mask_green = cv2.inRange(hsv, (40, 50, 50), (90, 255, 255))
+    mask_red1 = cv2.inRange(hsv, (0, 50, 50), (10, 255, 255))
+    mask_red2 = cv2.inRange(hsv, (170, 50, 50), (180, 255, 255))
     
-    # Червоний: два діапазони
-    mask_red1 = cv2.inRange(hsv, np.array([0, 50, 50]), np.array([10, 255, 255]))
-    mask_red2 = cv2.inRange(hsv, np.array([170, 50, 50]), np.array([180, 255, 255]))
-    
-    # Об'єднання масок
     mask_red_combined = cv2.bitwise_or(mask_red1, mask_red2)
     mask_combined = cv2.bitwise_or(mask_green, mask_red_combined)
 
     contours, _ = cv2.findContours(mask_combined, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
-    raw_candles = []
+    candles = []
+    
     for cnt in contours:
         x, y, w, h = cv2.boundingRect(cnt)
-        if h > 5 and w > 2:  # Фільтр шуму
-            # Використовуємо центр тіла для визначення кольору
-            mid_pixel_rgb = img[y + h // 2, x + w // 2]
-            is_green = mid_pixel_rgb[1] > mid_pixel_rgb[0]  # Перевірка G > R
+        
+        if h < 8 or w < 3:
+            continue
+            
+        y_top = y
+        y_bottom = y + h
 
-            # Координати свічки (Y=0 зверху, Y зростає вниз)
-            # ВИПРАВЛЕННЯ 2: high_coord та low_coord - це координати Y
-            high_coord = y  # найвища точка на екрані (менше Y)
-            low_coord = y + h # найнижча точка на екрані (більше Y)
+        high = float(y_top)
+        low = float(y_bottom)
 
-            if is_green:
-                # Для зеленої свічки: Open < Close. Open ціна знаходиться нижче на екрані (більше Y)
-                open_coord = low_coord
-                close_coord = high_coord
-            else:
-                # Для червоної свічки: Open > Close. Open ціна знаходиться вище на екрані (менше Y)
-                open_coord = high_coord
-                close_coord = low_coord
+        body_top = y + int(h * 0.25)
+        body_bottom = y + int(h * 0.75)
+
+        open_price = float(body_bottom)
+        close_price = float(body_top)
+
+        if abs(open_price - close_price) < 1:
+            continue
+            
+        if low - high < 4:
+            continue
                 
-            raw_candles.append({
-                "x": x,
-                # Тут ми повертаємо координати Y, трактуючи їх як "ціни" на екрані
-                "open": float(open_coord), 
-                "close": float(close_coord),
-                "high": float(high_coord),
-                "low": float(low_coord)
-            })
+        candles.append({
+            "x": x,
+            "open": open_price,
+            "close": close_price,
+            "high": high,
+            "low": low
+        })
 
-    # Сортуємо по осі X (зліва направо) та беремо останні count
-    raw_candles = sorted(raw_candles, key=lambda x: x["x"])[-count:]
-    return raw_candles
+    candles = sorted(candles, key=lambda c: c["x"])
 
-# ------------------------------------------------------
+    return candles[-count:]
+
 # OTC ANALYZE — ADAPTIVE (2m / 3m)
-# ------------------------------------------------------
+"""
+    Аналіз свічок OTC для виявлення сигналів CALL/PUT.
 
-def otc_analyze(candles):
+    Повертає кортеж: (сигнал dict або None, причина string).
+
+    Вхідні дані:
+    - candles: список словників зі свічками, кожна свічка має ключі:
+        'open', 'close', 'high', 'low', 'x' (позиція по осі X, не обов'язково).
     """
-    Повертає кортеж (signal_dict або None, message_reason)
-    """
-    if len(candles) < 20:
+
+    # Конфігураційні параметри (можна винести у глобальні налаштування)
+    MIN_CANDLES = 20                   # Мінімальна кількість свічок для аналізу
+    MAX_RANGE_MULTIPLIER = 25          # Максимальний мультиплікатор для діапазону (флет)
+    BODY_RATIO_THRESHOLD = 0.95        # Максимальне співвідношення body до загального розміру свічки (занадто сильна свічка)
+    SHADOW_BODY_RATIO_WEAK = 0.4       # Мінімальне співвідношення тіні до тіла для слабкого відбою
+    SHADOW_BODY_RATIO_SOFT = 0.7       # Мінімальне співвідношення для "м'якого" відбою (soft reject)
+    SHADOW_BODY_RATIO_STRONG = 1.3     # Мінімальне співвідношення для "сильного" відбою (strong reject)
+    ZONE_MULTIPLIER = 0.4              # Розмір зони поблизу рівня підтримки/опору
+
+    if len(candles) < MIN_CANDLES:
         return None, "Мало свічок для аналізу"
 
     last = candles[-1]
-    recent = candles[-20:]
+    recent = candles[-MIN_CANDLES:]
 
+    for idx, c in enumerate(recent):
+        if any(k not in c for k in ("open", "close", "high", "low")):
+            return None, f"Некоректні дані свічки під індексом {idx}"
+            
     def body(c):
         return abs(c["close"] - c["open"])
 
@@ -385,67 +527,64 @@ def otc_analyze(candles):
     def lower_shadow(c):
         return min(c["open"], c["close"]) - c["low"]
 
-    avg_body = sum(body(c) for c in recent) / 20
-
+    avg_body = sum(body(c) for c in recent) / MIN_CANDLES
     highs = [c["high"] for c in recent]
     lows = [c["low"] for c in recent]
 
     range_size = max(highs) - min(lows)
 
-     # OTC флет допускаємо ширший
-    if range_size > avg_body * 25:
-        return None, "Діапазон надто широкий"
+    # Флет — занадто великий діапазон свічок (відсічка)
+    if range_size > avg_body * MAX_RANGE_MULTIPLIER:
+        return None, f"Діапазон надто широкий: {range_size:.5f} > {avg_body * MAX_RANGE_MULTIPLIER:.5f}"
 
     high_level = max(highs)
     low_level = min(lows)
     price = last["close"]
-
-    zone = range_size * 0.4
+    zone = range_size * ZONE_MULTIPLIER
 
     near_high = abs(price - high_level) <= zone
     near_low = abs(price - low_level) <= zone
 
     if not (near_high or near_low):
-        return None, "Ціна не в зоні підтримки/опору"
+        return None, "Ціна не в зоні підтримки або опору"
 
-    if body(last) > rng(last) * 0.95:
+    if body(last) > rng(last) * BODY_RATIO_THRESHOLD:
         return None, "Свічка занадто потужна"
 
     up = upper_shadow(last)
     down = lower_shadow(last)
     b = body(last)
 
-    if near_high and up < b * 0.4:
+    if near_high and up < b * SHADOW_BODY_RATIO_WEAK:
         return None, "Слабкий відбій від верхнього рівня"
 
-    if near_low and down < b * 0.4:
+    if near_low and down < b * SHADOW_BODY_RATIO_WEAK:
         return None, "Слабкий відбій від нижнього рівня"
 
     soft_reject = False
     strong_reject = False
 
     if near_high:
-        if up >= b * 0.7:
+        if up >= b * SHADOW_BODY_RATIO_SOFT:
             soft_reject = True
-        if up >= b * 1.3:
+        if up >= b * SHADOW_BODY_RATIO_STRONG:
             strong_reject = True
 
     if near_low:
-        if down >= b * 0.7:
+        if down >= b * SHADOW_BODY_RATIO_SOFT:
             soft_reject = True
-        if down >= b * 1.3:
+        if down >= b * SHADOW_BODY_RATIO_STRONG:
             strong_reject = True
 
     if not soft_reject:
-        return None, "Відбій слабкий"
+        return None, "Відбій занадто слабкий"
 
     prev = candles[-2]
-
     if near_high and prev["close"] > high_level:
-        return None, "Попередня свічка вище рівня опору"
+        return None, "Попередня свічка закрилась вище рівня опору"
 
     if near_low and prev["close"] < low_level:
-        return None, "Попередня свічка нижче рівня підтримки"
+        return None, "Попередня свічка закрилась нижче рівня підтримки"
 
     if strong_reject:
         exp = 3
@@ -470,66 +609,64 @@ def otc_analyze(candles):
 
     return None, "Без сигналу"
     
-# ------------------------------------------------------
 # TREND FOLLOWING ANALYZE 
-# ------------------------------------------------------
 
 def trend_analyze(candles):
     """
-    Аналіз тренду. Шукає сигнал на продовження руху.
+    Аналіз тренду для пошуку сигналів на продовження руху.
+
+    Параметри:
+    - candles: список свічок у форматі dict з ключами open, close, high, low.
+
+    Повертає:
+    - dict з напрямком ("CALL" або "PUT") і експірацією,
+      або None, якщо сигнал відсутній.
     """
-    if len(candles) < 20:
+
+    MIN_CANDLES = 20            # Мінімальна кількість свічок для аналізу
+    MIN_RANGE_MULTIPLIER = 5    # Мінімальний мультиплікатор range_size / avg_body для тренду
+    MAX_BODY_MULTIPLIER = 1.5   # Максимальний розмір тіла для корекції
+    
+    if len(candles) < MIN_CANDLES:
         return None
 
     last = candles[-1]
-    recent = candles[-20:]
+    recent = candles[-MIN_CANDLES:]
 
-    avg_body = sum(body(c) for c in recent) / 20
+    def body(c):
+        return abs(c["close"] - c["open"])
+
+    avg_body = sum(body(c) for c in recent) / MIN_CANDLES
     
-    # 1. ВИЗНАЧЕННЯ ТРЕНДУ (НАПРЯМОК)
+    # 1. Визначення напрямку тренду за зміною ціни за період
     trend_direction = 0
     if recent[0]["close"] < recent[-1]["close"]:
         trend_direction = 1 # UP
     elif recent[0]["close"] > recent[-1]["close"]:
         trend_direction = -1 # DOWN
 
-    # Фільтр: тренд має бути достатньо сильним
+    # 2. Фільтр сили тренду — діапазон має бути значний
     range_size = max([c["high"] for c in recent]) - min([c["low"] for c in recent])
-    if range_size < avg_body * 5:
-        return None # Недостатньо сильний тренд
+    if range_size < avg_body * MIN_RANGE_MULTIPLIER:
+        return None # Тренд слабкий або немає
 
-    # 2. ФІЛЬТР ВІДКАТУ (КОРЕКЦІЇ)
-    if trend_direction == 1:
-        if last["close"] > last["open"]:
-            return None
+    # 3. Фільтр корекції — остання свічка повинна бути проти тренду (корекція)
+    if trend_direction == 1 and last["close"] >= last["open"]:
+        return None  # Для тренду вгору очікуємо корекцію вниз (закриття < відкриття)
+    if trend_direction == -1 and last["close"] <= last["open"]:
+        return None  # Для тренду вниз очікуємо корекцію вгору (закриття > відкриття)
 
-    if trend_direction == -1:
-        if last["close"] < last["open"]:
-            return None
-
-    # 3. ФІЛЬТР ІМПУЛЬСУ НА ВХІД
-    # Тіло останньої свічки не має бути занадто великим (це має бути саме корекція, а не розворот)
-    if body(last) > avg_body * 1.5:
+    # 4. Фільтр тіла останньої свічки — має бути невеликим (корекція, а не імпульс)
+    if body(last) > avg_body * MAX_BODY_MULTIPLIER:
         return None
 
-    # 4. СИГНАЛ (Вхід в напрямку тренду)
-    if trend_direction == 1:
+     # 5. Сигнал: вхід за напрямком тренду після корекції
         return {
-            "direction": "CALL",
-            "exp": 2 # Експірація на 2 свічки
+            "direction": "CALL" if trend_direction == 1 else "PUT",
+            "exp": 2  # Рекомендована експірація 2 свічки
         }
 
-    if trend_direction == -1:
-        return {
-            "direction": "PUT",
-            "exp": 2 # Експірація на 2 свічки
-        }
-
-    return None
-
-# ------------------------------------------------------
 # BREAKOUT ANALYZE 
-# ------------------------------------------------------
 
 def breakout_analyze(candles):
     """
@@ -541,33 +678,29 @@ def breakout_analyze(candles):
     last = candles[-1]
     recent = candles[-20:]
 
-    # helpers
     def body_ratio(c):
         return body(c) / rng(c) if rng(c) > 0 else 0
 
-    # 1. ВИЗНАЧЕННЯ РІВНІВ І ДІАПАЗОНУ (FLAT/RANGE)
-    highs = [c["high"] for c in recent[:-1]] # Виключаємо останню свічку з розрахунку рівнів
+    # 1. Визначення рівнів і діапазону (flat/range)
+    highs = [c["high"] for c in recent[:-1]]  # Виключаємо останню свічку
     lows = [c["low"] for c in recent[:-1]]
     high_level = max(highs)
     low_level = min(lows)
 
-    # 2. ПЕРЕВІРКА ПРОБОЮ
-    # Остання свічка повинна була закритися за межами попереднього діапазону
+    # 2. Перевірка пробою
     is_breakout_up = last["close"] > high_level and last["open"] <= high_level
     is_breakout_down = last["close"] < low_level and last["open"] >= low_level
 
     if not (is_breakout_up or is_breakout_down):
-        return None # Пробоя не було
+        return None
 
-    # 3. ФІЛЬТР СИЛИ ІМПУЛЬСУ
-    # Тіло останньої свічки має бути великим (імпульсним)
-    if body_ratio(last) < 0.7: # Тіло займає > 70% всього діапазону свічки
-        return None 
+    # 3. Фільтр сили імпульсу
+    if body_ratio(last) < 0.7:  # Тіло має займати >70% свічки
+        return None
         
-    # Також перевіряємо, щоб попередній діапазон не був надто трендовим,
-    # інакше це може бути просто продовження тренду, а не чистою пробою консолідації.
     avg_body = sum(body(c) for c in recent[:-1]) / 19
-    range_size = max(highs) - min(lows)
+    range_size = high_level - low_level
+    
     if range_size > avg_body * 6:
          return None # Найімовірніше, це вже був тренд, а не консолідація
 
@@ -575,7 +708,7 @@ def breakout_analyze(candles):
     if is_breakout_up:
         return {
             "direction": "CALL",
-            "exp": 2, # Торгуємо на продовження пробою
+            "exp": 2,
             "type": "BREAKOUT_CALL"
         }
 
@@ -588,9 +721,7 @@ def breakout_analyze(candles):
         
     return None
     
-# ------------------------------------------------------
 # MARKET DISPATCHER
-# ------------------------------------------------------
 
 def analyze_market(candles):
     if not candles or len(candles) < 30:
@@ -598,72 +729,85 @@ def analyze_market(candles):
 
     # Пріоритет 1: Пробій рівня (найсильніший імпульс)
     res = breakout_analyze(candles)
-    if res: return res
+    if res:
+        res["source"] = "breakout"
+        return res
 
     # Пріоритет 2: Трендовий відкат
     res = trend_analyze(candles)
-    if res: return res
+    if res:
+        res["source"] = "trend"
+        return res
 
     # Пріоритет 3: Флет та OTC розвороти
-    res = otc_analyze(candles)
-    if res: return res
+     res, msg = otc_analyze(candles)
+    if res:
+        res["source"] = "otc"
+        return res
 
     return None
     
 # ---------------- COMMANDS ----------------
+from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
+import threading
+
+# Змінні, які використовуєш
+USER_MODE = {}  # chat_id -> "OTC" або "MARKET"
+EXPIRY_MIN = 5  # наприклад
+MAX_ASSETS = 20  # обмеження для сканування
+THRESHOLDS = {
+    "MARKET": {
+        "USE_15M": True,
+        "MIN_STRENGTH": 65,
+    },
+    "OTC": {
+        # Тут можуть бути свої налаштування, якщо потрібно
+    }
+}
+
+# Припускаю, get_assets() вже є і повертає список активів з 'symbol' і 'display'
+
+@bot.message_handler(commands=["start", "help"])
+def start_help(msg):
+    bot.send_message(
+        msg.chat.id,
+        "Виберіть режим роботи бота:\n"
+        "/otc — режим OTC (надсилайте скріншоти)\n"
+        "/market — режим MARKET (аналіз пар)"
+    )
+
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
-    print(f"DEBUG: /otc отримано від chat_id={msg.chat.id}")
     USER_MODE[msg.chat.id] = "OTC"
     try:
-        bot.send_message(msg.chat.id, "⚠️ OTC MODE\n📸 Надішли СКРІН з Pocket Option")
-        print("DEBUG: Повідомлення /otc відправлено успішно")
+        bot.send_message(msg.chat.id, "⚠️ Ви ввімкнули режим OTC\n📸 Надішліть скріншот з Pocket Option для аналізу.")
     except Exception as e:
-        print(f"ERROR sending message: {e}")
+        print(f"ERROR sending OTC message: {e}")
         
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
-
     assets = get_assets()
-    kb = InlineKeyboardMarkup(row_width=2)
 
-    for a in assets:
-        kb.add(
-            InlineKeyboardButton(
-                text=a["display"],
-                callback_data=f"MARKET_PAIR:{a['symbol']}"
-            )
+    kb = InlineKeyboardMarkup(row_width=3)
+    for asset in assets:
+        kb.add(InlineKeyboardButton(text=asset["display"], callback_data=f"MARKET_PAIR:{asset['symbol']}"))
+
+    try:
+        bot.send_message(
+            msg.chat.id,
+            "📊 <b>Режим MARKET</b>\nОберіть валютну пару для аналізу:",
+            reply_markup=kb,
+            parse_mode="HTML"
         )
-
-    bot.send_message(
-        msg.chat.id,
-        "📊 <b>MARKET MODE</b>\n"
-        "Оберіть валютну пару:",
-        reply_markup=kb,
-        parse_mode="HTML"
-    )
-
-@bot.message_handler(commands=["signal", "scan"])
-def scan_cmd(msg):
-    """Ця функція спрацьовує миттєво, щоб уникнути SIGTERM на Render"""
-    print(f"Command /signal or /scan from chat {msg.chat.id}")
-    
-    if USER_MODE.get(msg.chat.id) == "OTC":
-        bot.send_message(msg.chat.id, "❌ У режимі OTC використовуй СКРІН")
-        return
-
-    bot.send_message(msg.chat.id, "🔍 Сканую ринок...")
-
-    # ЗАПУСКАЄМО АНАЛІЗ У ФОНІ
-    threading.Thread(target=process_market_scan, args=(msg.chat.id,)).start()
+    except Exception as e:
+        print(f"ERROR sending MARKET keyboard: {e}")
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("MARKET_PAIR:"))
 def market_pair_selected(call):
     chat_id = call.message.chat.id
-
     if USER_MODE.get(chat_id) != "MARKET":
-        bot.answer_callback_query(call.id, "Не MARKET режим")
+        bot.answer_callback_query(call.id, "❌ Ви не в режимі MARKET")
         return
 
     symbol = call.data.replace("MARKET_PAIR:", "")
@@ -672,22 +816,19 @@ def market_pair_selected(call):
     bot.answer_callback_query(call.id)
     bot.send_message(chat_id, f"🔍 Аналізую <b>{display}</b>...", parse_mode="HTML")
 
-    use_15m = THRESHOLDS[MODE]["USE_15M"]
-    min_strength = THRESHOLDS[MODE]["MIN_STRENGTH"]
+    mode = USER_MODE.get(chat_id, "MARKET")
+    use_15m = THRESHOLDS[mode].get("USE_15M", True)
+    min_strength = THRESHOLDS[mode].get("MIN_STRENGTH", 65)
 
     try:
         res = analyze(symbol, use_15m)
     except Exception as e:
-        print("ANALYZE ERROR:", e)
-        bot.send_message(chat_id, "❌ Помилка аналізу")
+        print(f"ANALYZE ERROR for {symbol}: {e}")
+        bot.send_message(chat_id, "❌ Помилка аналізу. Спробуйте пізніше.")
         return
 
-    if not res or res["strength"] < min_strength:
-        bot.send_message(
-            chat_id,
-            f"❌ По <code>{display}</code> сильного сигналу немає",
-            parse_mode="HTML"
-        )
+     if not res or res["strength"] < min_strength:
+        bot.send_message(chat_id, f"❌ По парі <code>{display}</code> сильних сигналів немає.", parse_mode="HTML")
         return
 
     bot.send_message(
@@ -699,69 +840,27 @@ def market_pair_selected(call):
         parse_mode="HTML"
     )
 
-def process_market_scan(chat_id):
-    try:
-        print(f"DEBUG: Потік запущено для чату {chat_id}")
-        checked = 0
-        no_data = 0
-        results = []
+@bot.message_handler(commands=["signal", "scan"])
+def scan_cmd(msg):
+    chat_id = msg.chat.id
+    mode = USER_MODE.get(chat_id)
 
-        assets = get_assets()
-        use_15m = THRESHOLDS[MODE]["USE_15M"]
-        min_strength = THRESHOLDS[MODE]["MIN_STRENGTH"]
+    if mode == "OTC":
+        bot.send_message(chat_id, "❌ У режимі OTC використовуйте надсилання скріншотів для аналізу.")
+        return
+    elif mode != "MARKET":
+        bot.send_message(chat_id, "⚠️ Виберіть режим роботи: /otc або /market")
+        return
 
-        for a in assets[:MAX_ASSETS]:
-            print("ANALYZE:", a["symbol"])
-            checked += 1
+    bot.send_message(chat_id, "🔍 Сканую ринок... Це може зайняти кілька секунд.")
 
-            try:
-                res = analyze(a["symbol"], use_15m)
-            except Exception as e:
-                print("ANALYZE ERROR:", a["symbol"], e)
-                no_data += 1
-                continue
-            
-            if res and res["strength"] >= min_strength:
-                results.append({
-                    "display": a["display"],
-                    "trend": res["trend"],
-                    "strength": res["strength"],
-                })
-
-        if not results:
-            bot.send_message(
-                chat_id,
-                f"ℹ️ Перевірено пар: {checked}\n"
-                f"📉 Без даних (Finnhub): {no_data}\n"
-                f"❌ Сильних сигналів поки немає"
-            )
-            return
-
-        results.sort(key=lambda x: x["strength"], reverse=True)
-
-        out = []
-        for r in results:
-            out.append(
-                f"📌 <b><code>{r['display']}</code></b>\n"
-                f"🔔 {r['trend']} | {r['strength']}%\n"
-                f"⏱ Expiry {EXPIRY_MIN} хв\n"
-                f"—"
-            )
-
-        bot.send_message(chat_id, "\n".join(out), parse_mode="HTML")
-        print(f"DEBUG: Сигнали успішно надіслані в чат {chat_id}") 
-        
-    except Exception as e:
-        print(f"CRITICAL ERROR in background thread: {e}")
-        try:
-            bot.send_message(chat_id, "⚠️ Сталася помилка під час аналізу.")
-        except:
-            pass
+    threading.Thread(target=process_market_scan, args=(chat_id,)).start()
 
 # === OTC PHOTO ===
 @bot.message_handler(content_types=["photo"])
 def otc_screen(msg):
     print(f"Photo received from chat {msg.chat.id}")
+
     if USER_MODE.get(msg.chat.id) != "OTC":
         print(f"Chat {msg.chat.id} not in OTC mode, ignoring photo")
         return
@@ -771,29 +870,35 @@ def otc_screen(msg):
         file_info = bot.get_file(file_id)
         image_bytes = bot.download_file(file_info.file_path)
 
-        bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 OTC аналіз...")
+        bot.send_message(msg.chat.id, "📥 Скрін отримано\n🔍 Проводжу OTC аналіз...")
 
         candles = extract_candles_from_image(image_bytes)
-        signal, reason = otc_analyze(candles)  # Припущення, що повертає (signal, reason)
+
+        if not candles or len(candles) < 20:
+            bot.send_message(msg.chat.id, "❌ Недостатньо даних на скріні для аналізу.")
+            return
+
+        signal, reason = otc_analyze(candles)
 
         if not signal:
-            bot.send_message(msg.chat.id, f"❌ OTC сигнал не виявлено: {reason}")
+            bot.send_message(msg.chat.id, f"❌ OTC сигнал не знайдено: {reason}")
             return
 
         direction_ua = "CALL (КУПІВЛЯ)" if signal["direction"] == "CALL" else "PUT (ПРОДАЖ)"
+        expiry_min = signal.get("exp", 1)
 
         bot.send_message(
             msg.chat.id,
             f"🔥 <b>OTC SIGNAL</b>\n"
             f"📊 Напрямок: {direction_ua}\n"
-            f"⏱ Експірація 1 хв\n"
-            f"⚠️ Ризик: СЕРЕДНІЙ"
+            f"⏱ Експірація: {expiry_min} хв\n"
+            f"⚠️ Ризик: СЕРЕДНІЙ",
+            parse_mode="HTML"
         )
-
+        
     except Exception as e:
         print(f"ERROR in OTC photo processing: {e}")
         bot.send_message(msg.chat.id, "❌ Помилка при обробці фото. Спробуйте ще раз.")
-
 
 # ---------------- WEBHOOK ----------------
 @app.route("/webhook", methods=["POST"])
