@@ -827,7 +827,7 @@ def market_pair_selected(call):
         bot.send_message(chat_id, "❌ Помилка аналізу. Спробуйте пізніше.")
         return
 
-     if not res or res["strength"] < min_strength:
+    if not res or res["strength"] < min_strength:
         bot.send_message(chat_id, f"❌ По парі <code>{display}</code> сильних сигналів немає.", parse_mode="HTML")
         return
 
