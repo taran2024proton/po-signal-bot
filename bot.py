@@ -486,7 +486,7 @@ def extract_candles_from_image(image_bytes, count=30):
     return candles[-count:]
 
 # OTC ANALYZE — ADAPTIVE (2m / 3m)
-"""
+    """
     Аналіз свічок OTC для виявлення сигналів CALL/PUT.
 
     Повертає кортеж: (сигнал dict або None, причина string).
