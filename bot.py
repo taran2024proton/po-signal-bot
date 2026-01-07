@@ -18,7 +18,7 @@ from flask import Flask, request
 
 # ---------------- CONFIG ----------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")
-FINNHUB_API_KEY = os.getenv("FINNHUB_API_KEY")
+TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
 
 WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com/webhook"
 
@@ -92,28 +92,33 @@ def cache_set(key, data):
     
 # ---------------- REALTIME MARKET DATA ----------------
 def fetch_realtime(symbol):
-    token = os.getenv("FINNHUB_API_KEY")
-    if not token:
-        print("ERROR: FINNHUB_API_KEY not set")
+    api_key = os.getenv("TWELVEDATA_API_KEY")
+    if not api_key:
+        print("ERROR: TWELVEDATA_API_KEY not set")
         return None
 
+    # Twelve Data використовує формат символів з косою рискою (наприклад, "USD/JPY")
+    symbol = symbol.replace("_", "/")  # якщо у тебе символи у вигляді "USD_JPY"
+
+    url = "https://api.twelvedata.com/quote"
+    params = {
+        "symbol": symbol,
+        "apikey": api_key
+    }
+
     try:
-        url = "https://finnhub.io/api/v1/quote"
-        params = {
-            "symbol": symbol.replace("=X", ""),
-            "token": token
-        }
         r = requests.get(url, params=params, timeout=3)
         data = r.json()
 
-        if not data or data.get("c") is None:
+        if not data or "close" not in data:
+            print(f"ERROR: No data or 'close' missing in response: {data}")
             return None
 
         return {
-            "Close": data["c"],
-            "High": data["h"],
-            "Low": data["l"],
-            "Open": data["o"]
+            "Close": float(data["close"]),
+            "High": float(data["high"]),
+            "Low": float(data["low"]),
+            "Open": float(data["open"])
         }
     except Exception as e:
         print(f"ERROR in fetch_realtime: {e}")
