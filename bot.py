@@ -6,15 +6,20 @@ import json
 import threading
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
-import io
 import os
 import time
+import io
+import math
 
 import requests
 import pandas as pd
 import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from flask import Flask, request
+
+import cv2
+import numpy as np
+from PIL import Image
 
 # ---------------- CONFIG ----------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -29,18 +34,28 @@ CACHE_SECONDS = 120
 EXPIRY_MIN = 5
 MAX_ASSETS = 15
 
-MODE = "aggressive"
-THRESHOLDS = {
-    "conservative": {"MIN_STRENGTH": 70, "USE_15M": True},
-    "aggressive": {"MIN_STRENGTH": 60, "USE_15M": False},
-}
-
 UTC = timezone.utc
 
 bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
 
 USER_MODE = {}  # chat_id -> MARKET | OTC
+
+THRESHOLDS = {
+    "MARKET": {"MIN_STRENGTH": 65, "USE_15M": True},
+    "OTC": {"MIN_STRENGTH": 0, "USE_15M": False},
+}
+
+bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
+app = Flask(__name__)
+
+USER_MODE = {}  # chat_id -> MARKET | OTC
+
+# ---------------- HELPERS ----------------
+def normalize_symbol(symbol: str) -> str:
+    if symbol.startswith("FX:"):
+        return symbol.replace("FX:", "").replace("_", "/")
+    return symbol
 
 # ---------------- CACHE ----------------
 def load_cache():
@@ -61,33 +76,18 @@ def cache_get(key):
     item = cache.get(key)
     if not item:
         return None
-
-    try:
-        ts = datetime.fromisoformat(item["ts"])
-        if ts.tzinfo is None:
-            ts = ts.replace(tzinfo=UTC)
-    except Exception:
-        return None
-
+    ts = datetime.fromisoformat(item["ts"])
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=UTC)
     if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
         cache.pop(key, None)
         return None
-
     return item["data"]
 
 def cache_set(key, data):
-    cache[key] = {
-        "ts": datetime.now(UTC).isoformat(),
-        "data": data
-    }
-
+    cache[key] = {"ts": datetime.now(UTC).isoformat(), "data": data}
     if len(cache) > 50:
-        oldest_key = min(
-            cache.items(),
-            key=lambda x: x[1]["ts"]
-        )[0]
-        cache.pop(oldest_key, None)
-
+        cache.pop(next(iter(cache)))
     save_cache(cache)
     
 # ---------------- REALTIME MARKET DATA ----------------
@@ -98,7 +98,12 @@ def fetch_realtime(symbol):
         return None
 
     # Twelve Data використовує формат символів з косою рискою (наприклад, "USD/JPY")
-    symbol = symbol.replace("_", "/")  # якщо у тебе символи у вигляді "USD_JPY"
+    symbol_td = normalize_symbol(symbol)
+
+    cache_key = f"realtime:{symbol_td}"
+    cached = cache_get(cache_key)
+    if cached:
+        return cached
 
     url = "https://api.twelvedata.com/quote"
     params = {
@@ -107,21 +112,30 @@ def fetch_realtime(symbol):
     }
 
     try:
-        r = requests.get(url, params=params, timeout=3)
+        r = requests.get(url, params=params, timeout=5)
         data = r.json()
 
-        if not data or "close" not in data:
-            print(f"ERROR: No data or 'close' missing in response: {data}")
+        if data.get("status") == "error":
+            print(f"TwelveData error ({symbol_td}): {data.get('message')}")
             return None
 
-        return {
-            "Close": float(data["close"]),
+        required = ["open", "high", "low", "close"]
+        if not all(k in data for k in required):
+            print(f"ERROR: incomplete quote data for {symbol_td}: {data}")
+            return None
+
+        result = {
+            "Open": float(data["open"]),
             "High": float(data["high"]),
             "Low": float(data["low"]),
-            "Open": float(data["open"])
+            "Close": float(data["close"])
         }
+
+        cache_set(cache_key, result)
+        return result
+
     except Exception as e:
-        print(f"ERROR in fetch_realtime: {e}")
+        print(f"ERROR in fetch_realtime ({symbol_td}): {e}")
         return None
 
 # ---------------- INDICATORS (MARKET) ----------------
@@ -223,95 +237,92 @@ def get_assets():
         {"symbol": "INDEX:HONGKONG33", "display": "HONG KONG 33", "category": "indices"},
         {"symbol": "INDEX:SMI20", "display": "SMI 20", "category": "indices"},
     ]
-    Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
+
+    if not Path(ASSETS_FILE).exists():
+        Path(ASSETS_FILE).write_text(json.dumps(assets, indent=2))
+
     return assets
 
 # ---------------- DATA (MARKET) ----------------
 
-RESOLUTION_MAP = {
-    "1m": "1",
-    "5m": "5",
-    "15m": "15",
-    "1h": "60"
+INTERVAL_MAP = {
+    "1m": "1min",
+    "5m": "5min",
+    "15m": "15min",
+    "1h": "1h"
 }
 
 CANDLES_BACK = {
-    "1": 300,
-    "5": 300,
-    "15": 200,
-    "60": 120
+    "1min": 300,
+    "5min": 300,
+    "15min": 200,
+    "1h": 120
 }
-
-ENDPOINTS = {
-    "forex": "https://finnhub.io/api/v1/forex/candle",
-    "crypto": "https://finnhub.io/api/v1/crypto/candle",
-    "stock": "https://finnhub.io/api/v1/stock/candle",
-    "index": "https://finnhub.io/api/v1/index/candle",
-}
-
-
-def detect_market_type(symbol: str) -> str:
-    if symbol.startswith("FX:"):
-        return "forex"
-    if symbol.startswith("BINANCE:"):
-        return "crypto"
-    if symbol.startswith("INDEX:"):
-        return "index"
-    return "stock"
-
 
 def fetch(symbol: str, interval: str):
-    resolution = RESOLUTION_MAP.get(interval, "5")
-    market_type = detect_market_type(symbol)
-    endpoint = ENDPOINTS.get(market_type)
-
-    if not endpoint:
-        print(f"DEBUG: Unsupported market type for {symbol}")
+    api_key = os.getenv("TWELVEDATA_API_KEY")
+    if not api_key:
+        print("ERROR: TWELVEDATA_API_KEY not set")
         return None
 
-    cache_key = f"{symbol}_{interval}"
+    symbol_td = normalize_symbol(symbol)
+    interval_td = INTERVAL_MAP.get(interval, "5min")
+
+    cache_key = f"candles:{symbol_td}:{interval_td}"
     cached = cache_get(cache_key)
     if cached:
         return pd.read_json(cached)
 
+    limit = CANDLES_BACK.get(interval_td, 300)
+
+    params = {
+        "symbol": symbol_td,
+        "interval": interval_td,
+        "outputsize": limit,
+        "apikey": api_key
+    }
+
     try:
-        now = int(time.time())
-        candles = CANDLES_BACK.get(resolution, 300)
-        from_time = now - (candles * int(resolution) * 60)
-
-        params = {
-            "symbol": symbol,
-            "resolution": resolution,
-            "from": from_time,
-            "to": now,
-            "token": os.getenv("FINNHUB_API_KEY")
-        }
-
-        r = requests.get(endpoint, params=params, timeout=5)
+        r = requests.get(
+            "https://api.twelvedata.com/time_series",
+            params=params,
+            timeout=8
+        )
         data = r.json()
 
-        if not data or data.get("s") != "ok":
-            print(f"DEBUG FETCH FAIL {symbol} [{market_type}] → {data}")
+        if data.get("status") == "error":
+            print(f"TwelveData error ({symbol_td}): {data.get('message')}")
             return None
 
-        df = pd.DataFrame({
-            "Open": data["o"],
-            "High": data["h"],
-            "Low": data["l"],
-            "Close": data["c"]
+        values = data.get("values")
+        if not values or len(values) < 50:
+            print(f"DEBUG: Not enough candles for {symbol_td}")
+            return None
+
+        df = pd.DataFrame(values)
+        df = df.astype({
+            "open": float,
+            "high": float,
+            "low": float,
+            "close": float
         })
 
-        if df.empty or len(df) < 50:
-            print(f"DEBUG: Not enough candles for {symbol}")
-            return None
+        df = df.rename(columns={
+            "open": "Open",
+            "high": "High",
+            "low": "Low",
+            "close": "Close"
+        })
+
+        df = df.iloc[::-1].reset_index(drop=True)
 
         cache_set(cache_key, df.to_json())
         return df
 
     except Exception as e:
-        print(f"ERROR fetch({symbol}): {e}")
+        print(f"ERROR fetch({symbol_td}): {e}")
         return None
-
+        
 # ---------------- MARKET ANALYSIS ----------------
 
 def analyze(symbol, use_15m):
@@ -369,7 +380,7 @@ def analyze(symbol, use_15m):
     if trend == "ПРОДАТИ" and abs(price - resistance) < atr * 1.1:
         score += 20
 
-    if ema_distance > 0.08:
+    if ema_distance > atr * 0.8:
         score += 10
 
     strength = min(score, 100)
@@ -491,59 +502,33 @@ def extract_candles_from_image(image_bytes, count=30):
     return candles[-count:]
 
 # OTC ANALYZE — ADAPTIVE (2m / 3m)
-    """
-    Аналіз свічок OTC для виявлення сигналів CALL/PUT.
 
-    Повертає кортеж: (сигнал dict або None, причина string).
+def otc_analyze(candles):
+    MIN_CANDLES = 20
+    MAX_RANGE_MULTIPLIER = 18
+    BODY_RATIO_THRESHOLD = 0.95
+    SHADOW_BODY_RATIO_WEAK = 0.4
+    SHADOW_BODY_RATIO_SOFT = 0.7
+    SHADOW_BODY_RATIO_STRONG = 1.3
+    ZONE_MULTIPLIER = 0.4
 
-    Вхідні дані:
-    - candles: список словників зі свічками, кожна свічка має ключі:
-        'open', 'close', 'high', 'low', 'x' (позиція по осі X, не обов'язково).
-    """
+    if not candles or len(candles) < MIN_CANDLES:
+        return None, "Мало свічок"
 
-    # Конфігураційні параметри (можна винести у глобальні налаштування)
-    MIN_CANDLES = 20                   # Мінімальна кількість свічок для аналізу
-    MAX_RANGE_MULTIPLIER = 25          # Максимальний мультиплікатор для діапазону (флет)
-    BODY_RATIO_THRESHOLD = 0.95        # Максимальне співвідношення body до загального розміру свічки (занадто сильна свічка)
-    SHADOW_BODY_RATIO_WEAK = 0.4       # Мінімальне співвідношення тіні до тіла для слабкого відбою
-    SHADOW_BODY_RATIO_SOFT = 0.7       # Мінімальне співвідношення для "м'якого" відбою (soft reject)
-    SHADOW_BODY_RATIO_STRONG = 1.3     # Мінімальне співвідношення для "сильного" відбою (strong reject)
-    ZONE_MULTIPLIER = 0.4              # Розмір зони поблизу рівня підтримки/опору
-
-    if len(candles) < MIN_CANDLES:
-        return None, "Мало свічок для аналізу"
-
-    last = candles[-1]
     recent = candles[-MIN_CANDLES:]
-
-    for idx, c in enumerate(recent):
-        if any(k not in c for k in ("open", "close", "high", "low")):
-            return None, f"Некоректні дані свічки під індексом {idx}"
-            
-    def body(c):
-        return abs(c["close"] - c["open"])
-
-    def rng(c):
-        return max(0.000001, c["high"] - c["low"])
-
-    def upper_shadow(c):
-        return c["high"] - max(c["open"], c["close"])
-
-    def lower_shadow(c):
-        return min(c["open"], c["close"]) - c["low"]
+    last = recent[-1]
 
     avg_body = sum(body(c) for c in recent) / MIN_CANDLES
     highs = [c["high"] for c in recent]
     lows = [c["low"] for c in recent]
 
     range_size = max(highs) - min(lows)
-
-    # Флет — занадто великий діапазон свічок (відсічка)
     if range_size > avg_body * MAX_RANGE_MULTIPLIER:
-        return None, f"Діапазон надто широкий: {range_size:.5f} > {avg_body * MAX_RANGE_MULTIPLIER:.5f}"
+        return None, "Занадто широкий діапазон"
 
     high_level = max(highs)
     low_level = min(lows)
+    
     price = last["close"]
     zone = range_size * ZONE_MULTIPLIER
 
@@ -560,123 +545,75 @@ def extract_candles_from_image(image_bytes, count=30):
     down = lower_shadow(last)
     b = body(last)
 
-    if near_high and up < b * SHADOW_BODY_RATIO_WEAK:
-        return None, "Слабкий відбій від верхнього рівня"
-
-    if near_low and down < b * SHADOW_BODY_RATIO_WEAK:
-        return None, "Слабкий відбій від нижнього рівня"
-
-    soft_reject = False
-    strong_reject = False
+    soft = False
+    strong = False
 
     if near_high:
         if up >= b * SHADOW_BODY_RATIO_SOFT:
-            soft_reject = True
+            soft = True
         if up >= b * SHADOW_BODY_RATIO_STRONG:
-            strong_reject = True
-
+            strong = True
+            
     if near_low:
         if down >= b * SHADOW_BODY_RATIO_SOFT:
-            soft_reject = True
+            soft = True
         if down >= b * SHADOW_BODY_RATIO_STRONG:
-            strong_reject = True
+            strong = True
 
-    if not soft_reject:
+    if not soft:
         return None, "Відбій занадто слабкий"
 
-    prev = candles[-2]
+    prev = recent[-2]
+    
     if near_high and prev["close"] > high_level:
-        return None, "Попередня свічка закрилась вище рівня опору"
-
+        return None, "Пробій вгору"
+        
     if near_low and prev["close"] < low_level:
-        return None, "Попередня свічка закрилась нижче рівня підтримки"
+        return None, "Пробій вниз"
 
-    if strong_reject:
-        exp = 3
-        sig_type = "OTC_STRONG_REJECTION"
-    else:
-        exp = 2
-        sig_type = "OTC_SOFT_REJECTION"
-
-    if near_low:
-        return {
-            "direction": "CALL",
-            "exp": exp,
-            "type": sig_type
-        }, "OK"
-
-    if near_high:
-        return {
-            "direction": "PUT",
-            "exp": exp,
-            "type": sig_type
-        }, "OK"
-
-    return None, "Без сигналу"
+    return {
+        "direction": "CALL" if near_low else "PUT",
+        "exp": 3 if strong_reject else 2,
+        "type": "OTC_STRONG_REJECTION" if strong_reject else "OTC_SOFT_REJECTION"
+    }, "OK"
     
 # TREND FOLLOWING ANALYZE 
 
 def trend_analyze(candles):
-    """
-    Аналіз тренду для пошуку сигналів на продовження руху.
-
-    Параметри:
-    - candles: список свічок у форматі dict з ключами open, close, high, low.
-
-    Повертає:
-    - dict з напрямком ("CALL" або "PUT") і експірацією,
-      або None, якщо сигнал відсутній.
-    """
-
-    MIN_CANDLES = 20            # Мінімальна кількість свічок для аналізу
-    MIN_RANGE_MULTIPLIER = 5    # Мінімальний мультиплікатор range_size / avg_body для тренду
-    MAX_BODY_MULTIPLIER = 1.5   # Максимальний розмір тіла для корекції
+    MIN_CANDLES = 20
+    MIN_RANGE_MULTIPLIER = 5
+    MAX_BODY_MULTIPLIER = 1.5
     
     if len(candles) < MIN_CANDLES:
         return None
 
-    last = candles[-1]
     recent = candles[-MIN_CANDLES:]
-
-    def body(c):
-        return abs(c["close"] - c["open"])
+    last = recent[-1]
 
     avg_body = sum(body(c) for c in recent) / MIN_CANDLES
+    trend = 1 if recent[0]["close"] < recent[-1]["close"] else -1
     
-    # 1. Визначення напрямку тренду за зміною ціни за період
-    trend_direction = 0
-    if recent[0]["close"] < recent[-1]["close"]:
-        trend_direction = 1 # UP
-    elif recent[0]["close"] > recent[-1]["close"]:
-        trend_direction = -1 # DOWN
-
-    # 2. Фільтр сили тренду — діапазон має бути значний
-    range_size = max([c["high"] for c in recent]) - min([c["low"] for c in recent])
+    range_size = max(c["high"] for c in recent) - min(c["low"] for c in recent)
     if range_size < avg_body * MIN_RANGE_MULTIPLIER:
-        return None # Тренд слабкий або немає
+        return None
 
-    # 3. Фільтр корекції — остання свічка повинна бути проти тренду (корекція)
-    if trend_direction == 1 and last["close"] >= last["open"]:
-        return None  # Для тренду вгору очікуємо корекцію вниз (закриття < відкриття)
-    if trend_direction == -1 and last["close"] <= last["open"]:
-        return None  # Для тренду вниз очікуємо корекцію вгору (закриття > відкриття)
+    if trend == 1 and last["close"] >= last["open"]:
+        return None
+    if trend == -1 and last["close"] <= last["open"]:
+        return None
 
-    # 4. Фільтр тіла останньої свічки — має бути невеликим (корекція, а не імпульс)
     if body(last) > avg_body * MAX_BODY_MULTIPLIER:
         return None
 
-     # 5. Сигнал: вхід за напрямком тренду після корекції
-        return {
-            "direction": "CALL" if trend_direction == 1 else "PUT",
-            "exp": 2  # Рекомендована експірація 2 свічки
-        }
+    return {
+        "direction": "CALL" if trend == 1 else "PUT",
+        "exp": 2,
+        "type": "TREND_PULLBACK"
+    }
 
 # BREAKOUT ANALYZE 
 
 def breakout_analyze(candles):
-    """
-    Аналіз пробою рівня (Brekaout). Шукає імпульсний рух за межі діапазону.
-    """
     if len(candles) < 20:
         return None
 
@@ -684,32 +621,29 @@ def breakout_analyze(candles):
     recent = candles[-20:]
 
     def body_ratio(c):
-        return body(c) / rng(c) if rng(c) > 0 else 0
+        return body(c) / rng(c)
 
-    # 1. Визначення рівнів і діапазону (flat/range)
-    highs = [c["high"] for c in recent[:-1]]  # Виключаємо останню свічку
+    highs = [c["high"] for c in recent[:-1]]
     lows = [c["low"] for c in recent[:-1]]
+    
     high_level = max(highs)
     low_level = min(lows)
 
-    # 2. Перевірка пробою
     is_breakout_up = last["close"] > high_level and last["open"] <= high_level
     is_breakout_down = last["close"] < low_level and last["open"] >= low_level
 
     if not (is_breakout_up or is_breakout_down):
         return None
 
-    # 3. Фільтр сили імпульсу
-    if body_ratio(last) < 0.7:  # Тіло має займати >70% свічки
+    if body_ratio(last) < 0.7:
         return None
         
     avg_body = sum(body(c) for c in recent[:-1]) / 19
     range_size = high_level - low_level
     
     if range_size > avg_body * 6:
-         return None # Найімовірніше, це вже був тренд, а не консолідація
+         return None
 
-    # 4. СИГНАЛ
     if is_breakout_up:
         return {
             "direction": "CALL",
@@ -732,19 +666,16 @@ def analyze_market(candles):
     if not candles or len(candles) < 30:
         return None
 
-    # Пріоритет 1: Пробій рівня (найсильніший імпульс)
     res = breakout_analyze(candles)
     if res:
         res["source"] = "breakout"
         return res
 
-    # Пріоритет 2: Трендовий відкат
     res = trend_analyze(candles)
     if res:
         res["source"] = "trend"
         return res
 
-    # Пріоритет 3: Флет та OTC розвороти
     res, msg = otc_analyze(candles)
     if res:
         res["source"] = "otc"
@@ -756,21 +687,21 @@ def analyze_market(candles):
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
 
-# Змінні, які використовуєш
 USER_MODE = {}  # chat_id -> "OTC" або "MARKET"
-EXPIRY_MIN = 5  # наприклад
-MAX_ASSETS = 20  # обмеження для сканування
+
+EXPIRY_MIN = 5
+MAX_ASSETS = 20
+
 THRESHOLDS = {
     "MARKET": {
         "USE_15M": True,
         "MIN_STRENGTH": 65,
     },
     "OTC": {
-        # Тут можуть бути свої налаштування, якщо потрібно
+        "USE_15M": False,
+        "MIN_STRENGTH": 0,
     }
 }
-
-# Припускаю, get_assets() вже є і повертає список активів з 'symbol' і 'display'
 
 @bot.message_handler(commands=["start", "help"])
 def start_help(msg):
