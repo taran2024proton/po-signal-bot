@@ -726,7 +726,7 @@ def market_mode(msg):
 
     assets = get_assets()  # ← ВАЖЛИВО
 
-    kb = InlineKeyboardMarkup(row_width=3)
+    kb = InlineKeyboardMarkup(row_width=5)
 
     row = []
     for asset in assets:
@@ -736,7 +736,7 @@ def market_mode(msg):
                 callback_data=f"MARKET_PAIR:{asset['symbol']}"
             )
         )
-        if len(row) == 3:
+        if len(row) == 5:
             kb.row(*row)
             row = []
 
@@ -789,6 +789,8 @@ def market_pair_selected(call):
         f"⏱ Expiry {EXPIRY_MIN} хв",
         parse_mode="HTML"
     )
+
+    send_market_keyboard(chat_id)
 
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
