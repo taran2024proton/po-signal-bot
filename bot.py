@@ -723,30 +723,30 @@ def otc_mode(msg):
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
-    assets = get_assets()
+
+    assets = get_assets()  # ← ВАЖЛИВО
 
     kb = InlineKeyboardMarkup(row_width=3)
 
-row = []
-for asset in assets:
-    row.append(
-        InlineKeyboardButton(
-            text=asset["display"],
-            callback_data=f"MARKET_PAIR:{asset['symbol']}"
+    row = []
+    for asset in assets:
+        row.append(
+            InlineKeyboardButton(
+                text=asset["display"],
+                callback_data=f"MARKET_PAIR:{asset['symbol']}"
+            )
         )
-    )
-    if len(row) == 3:
-        kb.row(*row)
-        row = []
+        if len(row) == 3:
+            kb.row(*row)
+            row = []
 
-# якщо залишились кнопки (<3)
-if row:
-    kb.row(*row)
+    if row:
+        kb.row(*row)
 
     try:
         bot.send_message(
             msg.chat.id,
-            "📊 <b>Режим MARKET</b>\nОберіть валютну пару для аналізу:",
+            "📊 <b>Режим MARKET</b>\nОберіть валютну пару:",
             reply_markup=kb,
             parse_mode="HTML"
         )
