@@ -726,8 +726,22 @@ def market_mode(msg):
     assets = get_assets()
 
     kb = InlineKeyboardMarkup(row_width=3)
-    for asset in assets:
-        kb.add(InlineKeyboardButton(text=asset["display"], callback_data=f"MARKET_PAIR:{asset['symbol']}"))
+
+row = []
+for asset in assets:
+    row.append(
+        InlineKeyboardButton(
+            text=asset["display"],
+            callback_data=f"MARKET_PAIR:{asset['symbol']}"
+        )
+    )
+    if len(row) == 3:
+        kb.row(*row)
+        row = []
+
+# якщо залишились кнопки (<3)
+if row:
+    kb.row(*row)
 
     try:
         bot.send_message(
