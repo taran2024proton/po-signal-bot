@@ -816,6 +816,7 @@ def market_pair_selected(call):
 
     if not res or res["strength"] < min_strength:
         bot.send_message(chat_id, f"❌ По парі <code>{display}</code> сильних сигналів немає.", parse_mode="HTML")
+        send_market_keyboard(chat_id)
         return
 
     bot.send_message(
@@ -829,6 +830,33 @@ def market_pair_selected(call):
 
     send_market_keyboard(chat_id)
 
+def send_market_keyboard(chat_id):
+    assets = get_assets()  # Має повертати список словників зі схемою [{'symbol': 'FX:EUR_USD', 'display': 'EUR/USD'}, ...]
+
+    kb = InlineKeyboardMarkup(row_width=5)
+    row = []
+
+    for asset in assets:
+        row.append(
+            InlineKeyboardButton(
+                text=asset["display"],
+                callback_data=f"MARKET_PAIR:{asset['symbol']}"
+            )
+        )
+        if len(row) == 5:
+            kb.row(*row)
+            row = []
+
+    if row:
+        kb.row(*row)
+
+    bot.send_message(
+        chat_id,
+        "📊 <b>Режим MARKET</b>\nОберіть валютну пару:",
+        reply_markup=kb,
+        parse_mode="HTML"
+    )
+    
 @bot.message_handler(commands=["signal", "scan"])
 def scan_cmd(msg):
     chat_id = msg.chat.id
