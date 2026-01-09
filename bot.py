@@ -325,67 +325,88 @@ def fetch(symbol: str, interval: str):
         
 # ---------------- MARKET ANALYSIS ----------------
 
-def analyze(symbol, use_15m):
-    df5 = fetch(symbol, "5m")
-    if df5 is None or len(df5) < 200:
+def detect_market_state(df):
+    close = df["Close"]
+
+    ema50 = ema_last(close, 50)
+    ema200 = ema_last(close, 200)
+    macd = macd_hist_last(close)
+    atr = atr_last(df)
+
+    if atr is None or atr == 0 or pd.isna(atr):
         return None
 
-    close = df5["Close"]
-    high = df5["High"]
-    low = df5["Low"]
+    # FLAT
+    if (
+        abs(ema50 - ema200) < atr * 0.25 and
+        abs(macd) < atr * 0.20
+    ):
+        return "FLAT"
 
-    price = float(close.iloc[-1])
+    return "TREND"
+
+def analyze_flat(symbol, df):
+    high = df["High"]
+    low = df["Low"]
+    close = df["Close"]
+
+    atr = atr_last(df)
+    if atr is None or atr == 0:
+        return None
+
+    lookback = 60
+    support = low.tail(lookback).min()
+    resistance = high.tail(lookback).max()
+
+    channel = resistance - support
+    if channel < atr * 1.8:
+        return None
+
+    price = close.iloc[-1]
+    zone = atr * 0.6
+
+    if abs(price - support) <= zone:
+        return {
+            "trend": "КУПИТИ",
+            "type": "FLAT_REBOUND",
+            "strength": 70
+        }
+
+    if abs(price - resistance) <= zone:
+        return {
+            "trend": "ПРОДАТИ",
+            "type": "FLAT_REBOUND",
+            "strength": 70
+        }
+
+    return None
+
+def analyze_trend(symbol, df, use_15m):
+    close = df["Close"]
 
     ema50 = ema_last(close, 50)
     ema200 = ema_last(close, 200)
     rsi = rsi_last(close, 7)
     macd = macd_hist_last(close)
-    atr = atr_last(df5)
+    atr = atr_last(df)
 
-    if atr is None or atr == 0 or pd.isna(atr):
-        return None
-
-    ema_distance = abs(ema50 - ema200)
-    if ema_distance < atr * 0.3:
+    if atr is None or atr == 0:
         return None
 
     trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
+    score = 50
 
-    lookback = 80
-    support = float(low.tail(lookback).min())
-    resistance = float(high.tail(lookback).max())
-
-    if (resistance - support) < atr * 1.5:
-        return None
-
-    if trend == "КУПИТИ" and price > resistance + atr * 0.3:
-        return None
-    if trend == "ПРОДАТИ" and price < support - atr * 0.3:
-        return None
-
-    score = 40
-
-    if trend == "КУПИТИ" and 35 < rsi < 50:
-        score += 15
-    if trend == "ПРОДАТИ" and 50 < rsi < 65:
-        score += 15
-
-    if trend == "КУПИТИ" and macd > 0:
-        score += 15
-    if trend == "ПРОДАТИ" and macd < 0:
-        score += 15
-
-    if trend == "КУПИТИ" and abs(price - support) < atr * 1.1:
+    if trend == "КУПИТИ" and 35 < rsi < 55:
         score += 20
-    if trend == "ПРОДАТИ" and abs(price - resistance) < atr * 1.1:
+    if trend == "ПРОДАТИ" and 45 < rsi < 65:
         score += 20
 
-    if ema_distance > atr * 0.8:
-        score += 10
+    if macd > 0 and trend == "КУПИТИ":
+        score += 15
+    if macd < 0 and trend == "ПРОДАТИ":
+        score += 15
 
-    strength = min(score, 100)
-
-    if strength < 65:
+    if score < 70:
         return None
 
     if use_15m:
@@ -395,24 +416,40 @@ def analyze(symbol, use_15m):
 
         ema50_15 = ema_last(df15["Close"], 50)
         ema200_15 = ema_last(df15["Close"], 200)
-        trend15 = "КУПИТИ" if ema50_15 > ema200_15 else "ПРОДАТИ"
 
-        if trend15 != trend:
+        if (ema50 > ema200) != (ema50_15 > ema200_15):
             return None
 
-    print(
-        f"ANALYZE {symbol} | {trend} | strength={strength} | price={price:.5f} | RSI={rsi:.1f}"
-    )
-    
+    return {
+        "trend": trend,
+        "type": "TREND_PULLBACK",
+        "strength": min(score, 100)
+    }
+
+def analyze(symbol, use_15m):
+    df = fetch(symbol, "5m")
+    if df is None or len(df) < 200:
+        return None
+
+    state = detect_market_state(df)
+    if state is None:
+        return None
+
+    if state == "FLAT":
+        res = analyze_flat(symbol, df)
+    else:
+        res = analyze_trend(symbol, df, use_15m)
+
+    if not res:
+        return None
+
+    print(f"MARKET {symbol} | {state} | {res['type']} | strength={res['strength']}")
+
     return {
         "symbol": symbol,
-        "trend": trend,
-        "price": price,
-        "strength": strength,
-        "support": support,
-        "resistance": resistance,
-        "rsi": rsi,
-        "atr": atr
+        "trend": res["trend"],
+        "strength": res["strength"],
+        "state": state
     }
 
 # ================= OTC SCREEN ANALYSIS =================
