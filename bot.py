@@ -722,11 +722,10 @@ import threading
 
 MIN_STRENGTH = 65
 
-def automatic_market_analysis(bot, chat_id):
+def automatic_market_analysis(bot, chat_id, assets):
     index = 0
     assets_count = len(assets)
     while USER_MODE.get(chat_id) == "MARKET":
-        # Аналізуємо максимум 8 активів за цикл
         for _ in range(8):
             asset = assets[index % assets_count]
             symbol = asset["symbol"]
@@ -743,7 +742,6 @@ def automatic_market_analysis(bot, chat_id):
                         f"⏱ Expiry {EXPIRY_MIN} хв"
                     )
                     bot.send_message(chat_id, message, parse_mode="HTML")
-                    
                 time.sleep(8)
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
@@ -792,7 +790,7 @@ def otc_mode(msg):
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
-    bot.send_message(msg.chat.id, "📊 Режим MARKET увімкнено. Бот автоматично аналізує всі пари і надсилатиме сигнали.")
+    bot.send_message(msg.chat.id, "📊 Режим MARKET увімкнено. Аналізую пари.")
 
     assets = get_assets()
     
