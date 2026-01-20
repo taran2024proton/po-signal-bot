@@ -60,18 +60,20 @@ def normalize_symbol(symbol: str) -> str:
 from datetime import datetime, timedelta
 
 def next_m5_entry_time():
-    now = datetime.now()
-    minute = (now.minute // 5 + 1) * 5
+    now = datetime.utcnow()
+    now_local = now_utc + timedelta(hours=2)
+    
+    minute = (now_local.minute // 5 + 1) * 5
 
     if minute >= 60:
-        entry_time = now.replace(
-            hour=(now.hour + 1) % 24,
+        entry_time = now_local.replace(
+            hour=(now_local.hour + 1) % 24,
             minute=0,
             second=0,
             microsecond=0
         )
     else:
-        entry_time = now.replace(
+        entry_time = now_local.replace(
             minute=minute,
             second=0,
             microsecond=0
@@ -729,14 +731,24 @@ def automatic_market_analysis(bot, chat_id, assets):
                 res = analyze(symbol, use_15m=True)  
                 if res and res.get("strength", 0) >= MIN_STRENGTH:
                     entry_time = next_m5_entry_time()
+
+                    trend = res['trend'].lower()
+                    if trend == "buy":
+                        trend_display = "🟢🔺 Купівля"
+                    elif trend == "sell":
+                        trend_display = "🔴🔻 Продаж"
+                    else:
+                        trend_display = res['trend']
+                        
                     message = (
                         f"🔥 <b>MARKET SIGNAL</b>\n"
-                        f"📌 <code>{display_name}</code>\n"
-                        f"🔔 {res['trend']} | {res['strength']}%\n"
+                        f"🪙 <code>{display_name}</code>\n"
+                        f"🔔 {trend_display} | {res['strength']}%\n"
                         f"🕒 Вхід в угоду: <b>{entry_time}</b>\n"
-                        f"⏱ Expiry {EXPIRY_MIN} хв"
+                        f"⏳ Експірація {EXPIRY_MIN} хв"
                     )
                     bot.send_message(chat_id, message, parse_mode="HTML")
+                    
                 time.sleep(8)
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
