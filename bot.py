@@ -778,6 +778,11 @@ def start_help(msg):
         "/otc — режим OTC (надсилайте скріншоти)\n"
         "/market — режим MARKET (аналіз пар)"
     )
+    
+@bot.message_handler(commands=["stop"])
+def stop_mode(msg):
+    USER_MODE[msg.chat.id] = None  # або можна del USER_MODE[msg.chat.id], якщо хочеш повністю прибрати
+    bot.send_message(msg.chat.id, "⏹ Режим MARKET вимкнено. Аналіз зупинено.")
 
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
