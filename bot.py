@@ -61,7 +61,7 @@ from datetime import datetime, timedelta
 
 def next_m5_entry_time():
     now = datetime.utcnow()
-    now_local = now_utc + timedelta(hours=2)
+    now_local = now + timedelta(hours=2)
     
     minute = (now_local.minute // 5 + 1) * 5
 
@@ -265,7 +265,7 @@ def fetch(symbol: str, interval: str):
     cache_key = f"candles:{symbol_td}:{interval_td}"
     cached = cache_get(cache_key)
     if cached:
-        return pd.read_json(cached)
+        return pd.read_json(io.StringIO(cached))
 
     limit = CANDLES_BACK.get(interval_td, 300)
 
@@ -749,7 +749,7 @@ def automatic_market_analysis(bot, chat_id, assets):
                     )
                     bot.send_message(chat_id, message, parse_mode="HTML")
                     
-                time.sleep(8)
+                time.sleep(7)
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
 
