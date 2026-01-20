@@ -787,6 +787,8 @@ def otc_mode(msg):
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
     bot.send_message(msg.chat.id, "📊 Режим MARKET увімкнено. Бот автоматично аналізує всі пари і надсилатиме сигнали.")
+
+    assets = get_assets()
     
     # Запускаємо автоматичний аналіз у фоновому потоці
     analysis_thread = threading.Thread(target=automatic_market_analysis, args=(bot, msg.chat.id, assets))
