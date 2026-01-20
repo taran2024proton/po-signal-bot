@@ -191,7 +191,6 @@ def atr_last(df, period=14):
 def get_assets():
     assets = [
         # Валютні пари (FX)
-        {"symbol": "FX:GBP_JPY", "display": "GBP/JPY", "category": "forex"},
         {"symbol": "FX:AUD_CAD", "display": "AUD/CAD", "category": "forex"},
         {"symbol": "FX:AUD_CHF", "display": "AUD/CHF", "category": "forex"},
         {"symbol": "FX:AUD_JPY", "display": "AUD/JPY", "category": "forex"},
@@ -207,6 +206,7 @@ def get_assets():
         {"symbol": "FX:EUR_JPY", "display": "EUR/JPY", "category": "forex"},
         {"symbol": "FX:GBP_AUD", "display": "GBP/AUD", "category": "forex"},
         {"symbol": "FX:GBP_CHF", "display": "GBP/CHF", "category": "forex"},
+        {"symbol": "FX:GBP_JPY", "display": "GBP/JPY", "category": "forex"},
         {"symbol": "FX:GBP_USD", "display": "GBP/USD", "category": "forex"},
         {"symbol": "FX:GBP_CAD", "display": "GBP/CAD", "category": "forex"},
         {"symbol": "FX:USD_CAD", "display": "USD/CAD", "category": "forex"},
@@ -216,48 +216,23 @@ def get_assets():
         # Акції (Stocks)
         {"symbol": "AAPL", "display": "Apple", "category": "stocks"},
         {"symbol": "BA", "display": "Boeing Company", "category": "stocks"},
-        {"symbol": "JPM", "display": "JPMorgan Chase & Co", "category": "stocks"},
         {"symbol": "MCD", "display": "McDonald's", "category": "stocks"},
         {"symbol": "MSFT", "display": "Microsoft", "category": "stocks"},
         {"symbol": "AXP", "display": "American Express", "category": "stocks"},
         {"symbol": "JNJ", "display": "Johnson & Johnson", "category": "stocks"},
         {"symbol": "PFE", "display": "Pfizer Inc", "category": "stocks"},
-        {"symbol": "XOM", "display": "ExxonMobil", "category": "stocks"},
         {"symbol": "CSCO", "display": "Cisco", "category": "stocks"},
         {"symbol": "META", "display": "Facebook Inc (Meta)", "category": "stocks"},
         {"symbol": "INTC", "display": "Intel", "category": "stocks"},
         {"symbol": "NFLX", "display": "Netflix", "category": "stocks"},
         {"symbol": "BABA", "display": "Alibaba", "category": "stocks"},
         {"symbol": "TSLA", "display": "Tesla", "category": "stocks"},
-        {"symbol": "C", "display": "Citigroup Inc", "category": "stocks"},
 
         # Криптовалюти (Crypto)
         {"symbol": "BINANCE:BTCUSDT", "display": "Bitcoin", "category": "crypto"},
-        {"symbol": "BINANCE:DASHUSDT", "display": "Dash", "category": "crypto"},
         {"symbol": "BINANCE:ETHUSDT", "display": "Ethereum", "category": "crypto"},
-        {"symbol": "BINANCE:BCHUSDT", "display": "Bitcoin Cash (BCH/USD)", "category": "crypto"},
-        {"symbol": "BINANCE:BCHEUR", "display": "Bitcoin Cash (BCH/EUR)", "category": "crypto"},
-        {"symbol": "BINANCE:BCHGBP", "display": "Bitcoin Cash (BCH/GBP)", "category": "crypto"},
-        {"symbol": "BINANCE:BCHJPY", "display": "Bitcoin Cash (BCH/JPY)", "category": "crypto"},
-        {"symbol": "BINANCE:BTCGBP", "display": "Bitcoin (BTC/GBP)", "category": "crypto"},
-        {"symbol": "BINANCE:BTCJPY", "display": "Bitcoin (BTC/JPY)", "category": "crypto"},
         {"symbol": "BINANCE:LINKUSDT", "display": "Chainlink", "category": "crypto"},
 
-        # Індекси (Indices)
-        {"symbol": "INDEX:AUS200", "display": "AUS 200", "category": "indices"},
-        {"symbol": "INDEX:US100", "display": "US100", "category": "indices"},
-        {"symbol": "INDEX:E35EUR", "display": "E35EUR", "category": "indices"},
-        {"symbol": "INDEX:100GBP", "display": "100GBP", "category": "indices"},
-        {"symbol": "INDEX:F40EUR", "display": "F40/EUR", "category": "indices"},
-        {"symbol": "INDEX:JPN225", "display": "JPN225", "category": "indices"},
-        {"symbol": "INDEX:D30EUR", "display": "D30/EUR", "category": "indices"},
-        {"symbol": "INDEX:E50EUR", "display": "E50/EUR", "category": "indices"},
-        {"symbol": "INDEX:SP500", "display": "SP500", "category": "indices"},
-        {"symbol": "INDEX:DJI30", "display": "DJI30", "category": "indices"},
-        {"symbol": "INDEX:AEX25", "display": "AEX 25", "category": "indices"},
-        {"symbol": "INDEX:CAC40", "display": "CAC 40", "category": "indices"},
-        {"symbol": "INDEX:HONGKONG33", "display": "HONG KONG 33", "category": "indices"},
-        {"symbol": "INDEX:SMI20", "display": "SMI 20", "category": "indices"},
     ]
 
     if not Path(ASSETS_FILE).exists():
@@ -741,6 +716,37 @@ def analyze_market(candles):
         return res
 
     return None
+
+import time
+import threading
+
+MIN_STRENGTH = 65
+
+def automatic_market_analysis(bot, chat_id):
+    while USER_MODE.get(chat_id) == "MARKET":
+        for asset in assets:
+            symbol = asset["symbol"]
+            display_name = asset["display"]
+            try:
+                res = analyze(symbol, use_15m=True)  
+                if res and res.get("strength", 0) >= MIN_STRENGTH:
+                    entry_time = next_m5_entry_time()
+                   message = (
+                        f"🔥 <b>MARKET SIGNAL</b>\n"
+                        f"📌 <code>{display}</code>\n"
+                        f"🔔 {res['trend']} | {res['strength']}%\n"
+                        f"🕒 Вхід в угоду: <b>{entry_time}</b>\n"
+                        f"⏱ Expiry {EXPIRY_MIN} хв"
+                    )
+                    bot.send_message(chat_id, message, parse_mode="HTML")
+                    
+                # Пауза між запитами, щоб не перевищувати API ліміти
+                time.sleep(12)
+            except Exception as e:
+                print(f"Error analyzing {symbol}: {e}")
+
+        # Пауза після повного проходу по всіх активах (щоб не робити занадто часто)
+        time.sleep(30)
     
 # ---------------- COMMANDS ----------------
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
@@ -782,35 +788,12 @@ def otc_mode(msg):
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
     USER_MODE[msg.chat.id] = "MARKET"
-
-    assets = get_assets()  # ← ВАЖЛИВО
-
-    kb = InlineKeyboardMarkup(row_width=5)
-
-    row = []
-    for asset in assets:
-        row.append(
-            InlineKeyboardButton(
-                text=asset["display"],
-                callback_data=f"MARKET_PAIR:{asset['symbol']}"
-            )
-        )
-        if len(row) == 5:
-            kb.row(*row)
-            row = []
-
-    if row:
-        kb.row(*row)
-
-    try:
-        bot.send_message(
-            msg.chat.id,
-            "📊 <b>Режим MARKET</b>\nОберіть валютну пару:",
-            reply_markup=kb,
-            parse_mode="HTML"
-        )
-    except Exception as e:
-        print(f"ERROR sending MARKET keyboard: {e}")
+    bot.send_message(msg.chat.id, "📊 Режим MARKET увімкнено. Бот автоматично аналізує всі пари і надсилатиме сигнали.")
+    
+    # Запускаємо автоматичний аналіз у фоновому потоці
+    analysis_thread = threading.Thread(target=automatic_market_analysis, args=(bot, msg.chat.id))
+    analysis_thread.daemon = True
+    analysis_thread.start()
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("MARKET_PAIR:"))
 def market_pair_selected(call):
@@ -973,3 +956,4 @@ if __name__ == "__main__":
     print(f"Webhook URL should be set to: {WEBHOOK_URL}")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
+    bot.polling()
