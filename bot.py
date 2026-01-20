@@ -731,7 +731,7 @@ def automatic_market_analysis(bot, chat_id):
                 res = analyze(symbol, use_15m=True)  
                 if res and res.get("strength", 0) >= MIN_STRENGTH:
                     entry_time = next_m5_entry_time()
-                   message = (
+                    message = (
                         f"🔥 <b>MARKET SIGNAL</b>\n"
                         f"📌 <code>{display}</code>\n"
                         f"🔔 {res['trend']} | {res['strength']}%\n"
