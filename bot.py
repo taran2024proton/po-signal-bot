@@ -57,6 +57,28 @@ def normalize_symbol(symbol: str) -> str:
         return symbol.replace("FX:", "").replace("_", "/")
     return symbol
 
+from datetime import datetime, timedelta
+
+def next_m5_entry_time():
+    now = datetime.now()
+    minute = (now.minute // 5 + 1) * 5
+
+    if minute >= 60:
+        entry_time = now.replace(
+            hour=(now.hour + 1) % 24,
+            minute=0,
+            second=0,
+            microsecond=0
+        )
+    else:
+        entry_time = now.replace(
+            minute=minute,
+            second=0,
+            microsecond=0
+        )
+
+    return entry_time.strftime("%H:%M")
+
 # ---------------- CACHE ----------------
 def load_cache():
     try:
@@ -818,12 +840,15 @@ def market_pair_selected(call):
         bot.send_message(chat_id, f"❌ По парі <code>{display}</code> сильних сигналів немає.", parse_mode="HTML")
         send_market_keyboard(chat_id)
         return
+    
+    entry_time = next_m5_entry_time()
 
     bot.send_message(
         chat_id,
         f"🔥 <b>MARKET SIGNAL</b>\n"
         f"📌 <code>{display}</code>\n"
         f"🔔 {res['trend']} | {res['strength']}%\n"
+        f"🕒 Вхід в угоду: <b>{entry_time}</b>\n"
         f"⏱ Expiry {EXPIRY_MIN} хв",
         parse_mode="HTML"
     )
