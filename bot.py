@@ -734,9 +734,9 @@ def automatic_market_analysis(bot, chat_id, assets):
 
                     trend = res['trend'].lower()
                     if trend == "buy":
-                        trend_display = "🟢 Купівля"
+                        trend_display = "🟢 Купити"
                     elif trend == "sell":
-                        trend_display = "🔴 Продаж"
+                        trend_display = "🔴 Продати"
                     else:
                         trend_display = res['trend']
                         
@@ -744,8 +744,8 @@ def automatic_market_analysis(bot, chat_id, assets):
                         f"🔥 <b>MARKET SIGNAL</b>\n"
                         f"🪙 <code>{display_name}</code>\n"
                         f"{trend_display} | {res['strength']}%\n"
-                        f"🕒 Вхід в угоду: <b>{entry_time}</b>\n"
-                        f"⏳ Експірація {EXPIRY_MIN} хв"
+                        f"⏰ Вхід: <b>{entry_time}</b>\n"
+                        f"⏳ Експірація: {EXPIRY_MIN} хв"
                     )
                     bot.send_message(chat_id, message, parse_mode="HTML")
                     
