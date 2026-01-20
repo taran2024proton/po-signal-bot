@@ -722,7 +722,7 @@ import threading
 
 MIN_STRENGTH = 65
 
-def automatic_market_analysis(bot, chat_id):
+def automatic_market_analysis(bot, chat_id, assets):
     while USER_MODE.get(chat_id) == "MARKET":
         for asset in assets:
             symbol = asset["symbol"]
@@ -740,12 +740,10 @@ def automatic_market_analysis(bot, chat_id):
                     )
                     bot.send_message(chat_id, message, parse_mode="HTML")
                     
-                # Пауза між запитами, щоб не перевищувати API ліміти
                 time.sleep(12)
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
 
-        # Пауза після повного проходу по всіх активах (щоб не робити занадто часто)
         time.sleep(30)
     
 # ---------------- COMMANDS ----------------
@@ -791,7 +789,7 @@ def market_mode(msg):
     bot.send_message(msg.chat.id, "📊 Режим MARKET увімкнено. Бот автоматично аналізує всі пари і надсилатиме сигнали.")
     
     # Запускаємо автоматичний аналіз у фоновому потоці
-    analysis_thread = threading.Thread(target=automatic_market_analysis, args=(bot, msg.chat.id))
+    analysis_thread = threading.Thread(target=automatic_market_analysis, args=(bot, msg.chat.id, assets))
     analysis_thread.daemon = True
     analysis_thread.start()
 
