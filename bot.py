@@ -337,7 +337,7 @@ def detect_market_state(df):
     ):
         return "FLAT"
 
-    return "TREND"
+    return ""
 
 def analyze_flat(symbol, df):
     high = df["High"]
@@ -732,13 +732,14 @@ def automatic_market_analysis(bot, chat_id, assets):
                 if res and res.get("strength", 0) >= MIN_STRENGTH:
                     entry_time = next_m5_entry_time()
 
-                    trend = res['trend'].lower()
-                    if trend == "buy":
+                    trend_raw = res['trend'].upper()
+                    
+                    if "КУП" in trend_raw:
                         trend_display = "🟢 Купити"
-                    elif trend == "sell":
+                    elif "ПРОД" in trend_raw:
                         trend_display = "🔴 Продати"
                     else:
-                        trend_display = res['trend']
+                        trend_display = trend_raw
                         
                     message = (
                         f"🔥 <b>MARKET SIGNAL</b>\n"
