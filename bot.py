@@ -722,9 +722,13 @@ import threading
 
 MIN_STRENGTH = 65
 
-def automatic_market_analysis(bot, chat_id, assets):
+def automatic_market_analysis(bot, chat_id):
+    index = 0
+    assets_count = len(assets)
     while USER_MODE.get(chat_id) == "MARKET":
-        for asset in assets:
+        # Аналізуємо максимум 8 активів за цикл
+        for _ in range(8):
+            asset = assets[index % assets_count]
             symbol = asset["symbol"]
             display_name = asset["display"]
             try:
@@ -733,18 +737,20 @@ def automatic_market_analysis(bot, chat_id, assets):
                     entry_time = next_m5_entry_time()
                     message = (
                         f"🔥 <b>MARKET SIGNAL</b>\n"
-                        f"📌 <code>{display}</code>\n"
+                        f"📌 <code>{display_name}</code>\n"
                         f"🔔 {res['trend']} | {res['strength']}%\n"
                         f"🕒 Вхід в угоду: <b>{entry_time}</b>\n"
                         f"⏱ Expiry {EXPIRY_MIN} хв"
                     )
                     bot.send_message(chat_id, message, parse_mode="HTML")
                     
-                time.sleep(12)
+                time.sleep(8)
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
 
-        time.sleep(30)
+            index += 1
+            
+        time.sleep(10)
     
 # ---------------- COMMANDS ----------------
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
