@@ -228,11 +228,6 @@ def get_assets():
         {"symbol": "BABA", "display": "Alibaba", "category": "stocks"},
         {"symbol": "TSLA", "display": "Tesla", "category": "stocks"},
 
-        # Криптовалюти (Crypto)
-        {"symbol": "BINANCE:BTCUSDT", "display": "Bitcoin", "category": "crypto"},
-        {"symbol": "BINANCE:ETHUSDT", "display": "Ethereum", "category": "crypto"},
-        {"symbol": "BINANCE:LINKUSDT", "display": "Chainlink", "category": "crypto"},
-
     ]
 
     if not Path(ASSETS_FILE).exists():
