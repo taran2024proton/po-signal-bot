@@ -21,6 +21,12 @@ import cv2
 import numpy as np
 from PIL import Image
 
+# =====================
+# API CACHE (1 хв)
+# =====================
+API_CACHE = {}
+CACHE_TTL = 60  # секунд
+
 # ---------------- CONFIG ----------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")
 TWELVEDATA_API_KEY = os.getenv("TWELVEDATA_API_KEY")
@@ -280,9 +286,13 @@ def fetch(symbol: str, interval: str):
         r = requests.get(
             "https://api.twelvedata.com/time_series",
             params=params,
-            timeout=8
+             timeout=8
         )
-        data = r.json()
+        try:
+            data = r.json()
+        except Exception:
+            print(f"TwelveData error ({symbol_td}): invalid JSON response")
+            return None
 
         if data.get("status") == "error":
             print(f"TwelveData error ({symbol_td}): {data.get('message')}")
