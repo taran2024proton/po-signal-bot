@@ -21,6 +21,14 @@ import cv2
 import numpy as np
 from PIL import Image
 
+LAST_SIGNALS = {}
+
+# =====================
+# SIGNAL COOLDOWN
+# =====================
+COOLDOWN_SECONDS = 10 * 60  # 10 хвилин
+LAST_SIGNAL_TIME = {}
+
 # =====================
 # API CACHE (1 хв)
 # =====================
@@ -737,10 +745,25 @@ def automatic_market_analysis(bot, chat_id, assets):
             asset = assets[index % assets_count]
             symbol = asset["symbol"]
             display_name = asset["display"]
+
+            now = time.time()
+            last_time = LAST_SIGNAL_TIME.get(symbol)
+            if last_time and now - last_time < COOLDOWN_SECONDS:
+                index += 1
+                continue
+            
             try:
                 res = analyze(symbol, use_15m=True)  
                 if res and res.get("strength", 0) >= MIN_STRENGTH:
                     entry_time = next_m5_entry_time()
+                    trend = res["trend"].lower()
+
+                    signal_key = f"{symbol}|{trend}|{entry_time}"
+
+                    if LAST_SIGNALS.get(chat_id) == signal_key:
+                        index += 1
+                        continue
+                    LAST_SIGNALS[chat_id] = signal_key
 
                     trend_raw = res['trend'].upper()
                     
@@ -758,9 +781,20 @@ def automatic_market_analysis(bot, chat_id, assets):
                         f"⏰ Вхід: <b>{entry_time}</b>\n"
                         f"⏳ Експірація: {EXPIRY_MIN} хв"
                     )
+
+                    markup = InlineKeyboardMarkup()
+                    markup.row(
+                        InlineKeyboardButton("✅", callback_data=f"win|{symbol}|{entry_time}"),
+                        InlineKeyboardButton("🟰", callback_data=f"draw|{symbol}|{entry_time}"),
+                        InlineKeyboardButton("❌", callback_data=f"loss|{symbol}|{entry_time}")
+                    )
+                    
                     bot.send_message(chat_id, message, parse_mode="HTML")
                     
+                    LAST_SIGNAL_TIME[symbol] = now
+                    
                 time.sleep(7)
+                
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
 
@@ -822,6 +856,8 @@ def market_mode(msg):
     analysis_thread.daemon = True
     analysis_thread.start()
 
+STATS = {}
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("MARKET_PAIR:"))
 def market_pair_selected(call):
     chat_id = call.message.chat.id
@@ -852,6 +888,13 @@ def market_pair_selected(call):
         return
     
     entry_time = next_m5_entry_time()
+    
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("✅", callback_data=f"win|{symbol}|{entry_time}"),
+        InlineKeyboardButton("🟰", callback_data=f"draw|{symbol}|{entry_time}"),
+        InlineKeyboardButton("❌", callback_data=f"loss|{symbol}|{entry_time}")
+    )
 
     bot.send_message(
         chat_id,
@@ -860,11 +903,32 @@ def market_pair_selected(call):
         f"🔔 {res['trend']} | {res['strength']}%\n"
         f"🕒 Вхід в угоду: <b>{entry_time}</b>\n"
         f"⏱ Expiry {EXPIRY_MIN} хв",
-        parse_mode="HTML"
+        parse_mode="HTML",
+        reply_markup=markup
     )
 
     send_market_keyboard(chat_id)
+    
+@bot.callback_query_handler(func=lambda call: call.data.split("|")[0] in ["win", "loss", "draw"])
+def handle_result_callback(call):
+    data = call.data.split("|")
+    result = data[0]        # win, loss, draw
+    symbol = data[1]
+    entry_time = data[2]
+    chat_id = call.message.chat.id
 
+    if chat_id not in STATS:
+        STATS[chat_id] = {}
+    if symbol not in STATS[chat_id]:
+        STATS[chat_id][symbol] = {"win": 0, "loss": 0, "draw": 0}
+
+    STATS[chat_id][symbol][result] += 1
+
+    bot.answer_callback_query(call.id, f"Позначено як {result.upper()}")
+
+    # Видаляємо кнопки після вибору
+    bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+    
 def send_market_keyboard(chat_id):
     assets = get_assets()  # Має повертати список словників зі схемою [{'symbol': 'FX:EUR_USD', 'display': 'EUR/USD'}, ...]
 
