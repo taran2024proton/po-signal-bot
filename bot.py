@@ -723,7 +723,7 @@ def automatic_market_analysis(bot, chat_id, assets):
     index = 0
     assets_count = len(assets)
     while USER_MODE.get(chat_id) == "MARKET":
-        for _ in range(8):
+        for _ in range(6):
             asset = assets[index % assets_count]
             symbol = asset["symbol"]
             display_name = asset["display"]
@@ -756,7 +756,7 @@ def automatic_market_analysis(bot, chat_id, assets):
 
             index += 1
             
-        time.sleep(10)
+        time.sleep(12)
     
 # ---------------- COMMANDS ----------------
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
