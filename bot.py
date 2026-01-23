@@ -789,7 +789,7 @@ def automatic_market_analysis(bot, chat_id, assets):
                         InlineKeyboardButton("❌", callback_data=f"loss|{symbol}|{entry_time}")
                     )
                     
-                    bot.send_message(chat_id, message, parse_mode="HTML")
+                    bot.send_message(
                         chat_id,
                         message,
                         parse_mode="HTML",
