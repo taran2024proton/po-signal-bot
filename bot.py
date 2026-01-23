@@ -790,6 +790,11 @@ def automatic_market_analysis(bot, chat_id, assets):
                     )
                     
                     bot.send_message(chat_id, message, parse_mode="HTML")
+                        chat_id,
+                        message,
+                        parse_mode="HTML",
+                        reply_markup=markup
+                    )
                     
                     LAST_SIGNAL_TIME[symbol] = now
                     
