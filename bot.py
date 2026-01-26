@@ -20,6 +20,10 @@ from flask import Flask, request
 import cv2
 import numpy as np
 from PIL import Image
+from collections import defaultdict
+from datetime import date
+
+STATS = defaultdict(lambda: {"win": 0, "loss": 0, "draw": 0})
 
 LAST_SIGNALS = {}
 
@@ -863,6 +867,31 @@ def market_mode(msg):
 
 STATS = {}
 
+@bot.message_handler(commands=["stats"])
+def stats_today(message):
+    today = date.today().isoformat()
+    stats = STATS.get(today)
+
+    if not stats:
+        bot.send_message(message.chat.id, "📊 За сьогодні ще немає угод.")
+        return
+
+    wins = stats["win"]
+    losses = stats["loss"]
+    draws = stats["draw"]
+    total = wins + losses + draws
+    winrate = round((wins / total) * 100, 1) if total > 0 else 0
+
+    bot.send_message(
+        message.chat.id,
+        f"📊 <b>Статистика за сьогодні</b>\n\n"
+        f"✅ Win: {wins}\n"
+        f"❌ Loss: {losses}\n"
+        f"🟰 Draw: {draws}\n"
+        f"📈 Winrate: {winrate}%",
+        parse_mode="HTML"
+    )
+
 @bot.callback_query_handler(func=lambda call: call.data.startswith("MARKET_PAIR:"))
 def market_pair_selected(call):
     chat_id = call.message.chat.id
@@ -916,23 +945,19 @@ def market_pair_selected(call):
     
 @bot.callback_query_handler(func=lambda call: call.data.split("|")[0] in ["win", "loss", "draw"])
 def handle_result_callback(call):
-    data = call.data.split("|")
-    result = data[0]        # win, loss, draw
-    symbol = data[1]
-    entry_time = data[2]
-    chat_id = call.message.chat.id
+    result, symbol, entry_time = call.data.split("|")
+    today = date.today().isoformat()
 
-    if chat_id not in STATS:
-        STATS[chat_id] = {}
-    if symbol not in STATS[chat_id]:
-        STATS[chat_id][symbol] = {"win": 0, "loss": 0, "draw": 0}
+    STATS[today][result] += 1
 
-    STATS[chat_id][symbol][result] += 1
+    bot.answer_callback_query(call.id, f"Збережено: {result.upper()}")
 
-    bot.answer_callback_query(call.id, f"Позначено як {result.upper()}")
-
-    # Видаляємо кнопки після вибору
-    bot.edit_message_reply_markup(chat_id, call.message.message_id, reply_markup=None)
+    # прибираємо кнопки
+    bot.edit_message_reply_markup(
+        call.message.chat.id,
+        call.message.message_id,
+        reply_markup=None
+    )
     
 def send_market_keyboard(chat_id):
     assets = get_assets()  # Має повертати список словників зі схемою [{'symbol': 'FX:EUR_USD', 'display': 'EUR/USD'}, ...]
