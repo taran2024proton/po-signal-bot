@@ -64,11 +64,6 @@ THRESHOLDS = {
     "OTC": {"MIN_STRENGTH": 0, "USE_15M": False},
 }
 
-bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
-app = Flask(__name__)
-
-USER_MODE = {}  # chat_id -> MARKET | OTC
-
 # ---------------- HELPERS ----------------
 def normalize_symbol(symbol: str) -> str:
     if symbol.startswith("FX:"):
@@ -232,22 +227,6 @@ def get_assets():
         {"symbol": "FX:USD_CAD", "display": "USD/CAD", "category": "forex"},
         {"symbol": "FX:USD_CHF", "display": "USD/CHF", "category": "forex"},
         {"symbol": "FX:USD_JPY", "display": "USD/JPY", "category": "forex"},
-
-        # Акції (Stocks)
-        {"symbol": "AAPL", "display": "Apple", "category": "stocks"},
-        {"symbol": "BA", "display": "Boeing Company", "category": "stocks"},
-        {"symbol": "MCD", "display": "McDonald's", "category": "stocks"},
-        {"symbol": "MSFT", "display": "Microsoft", "category": "stocks"},
-        {"symbol": "AXP", "display": "American Express", "category": "stocks"},
-        {"symbol": "JNJ", "display": "Johnson & Johnson", "category": "stocks"},
-        {"symbol": "PFE", "display": "Pfizer Inc", "category": "stocks"},
-        {"symbol": "CSCO", "display": "Cisco", "category": "stocks"},
-        {"symbol": "META", "display": "Facebook Inc (Meta)", "category": "stocks"},
-        {"symbol": "INTC", "display": "Intel", "category": "stocks"},
-        {"symbol": "NFLX", "display": "Netflix", "category": "stocks"},
-        {"symbol": "BABA", "display": "Alibaba", "category": "stocks"},
-        {"symbol": "TSLA", "display": "Tesla", "category": "stocks"},
-
     ]
 
     if not Path(ASSETS_FILE).exists():
@@ -816,6 +795,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
 
 USER_MODE = {}  # chat_id -> "OTC" або "MARKET"
+STATS = {}
 
 EXPIRY_MIN = 5
 MAX_ASSETS = 20
@@ -894,6 +874,7 @@ def stats_today(message):
 
 @bot.callback_query_handler(func=lambda call: call.data.startswith("MARKET_PAIR:"))
 def market_pair_selected(call):
+    print("CALLBACK MARKET:", call.data)
     chat_id = call.message.chat.id
     if USER_MODE.get(chat_id) != "MARKET":
         bot.answer_callback_query(call.id, "❌ Ви не в режимі MARKET")
@@ -945,14 +926,18 @@ def market_pair_selected(call):
     
 @bot.callback_query_handler(func=lambda call: call.data.split("|")[0] in ["win", "loss", "draw"])
 def handle_result_callback(call):
+    print("CALLBACK RESULT:", call.data)
     result, symbol, entry_time = call.data.split("|")
     today = date.today().isoformat()
+    chat_id = call.message.chat.id
+
+    if today not in STATS:
+        STATS[today] = {"win": 0, "loss": 0, "draw": 0}
 
     STATS[today][result] += 1
 
     bot.answer_callback_query(call.id, f"Збережено: {result.upper()}")
 
-    # прибираємо кнопки
     bot.edit_message_reply_markup(
         call.message.chat.id,
         call.message.message_id,
