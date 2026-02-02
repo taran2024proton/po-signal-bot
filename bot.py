@@ -179,7 +179,7 @@ def fetch_realtime(symbol):
 def ema_last(series, period):
     return series.ewm(span=period, adjust=False).mean().iloc[-1]
 
-def rsi_last(series, period=14):
+def rsi_last(series, period=7):
     delta = series.diff()
     up = delta.clip(lower=0)
     down = -delta.clip(upper=0)
@@ -189,10 +189,10 @@ def rsi_last(series, period=14):
     return (100 - (100 / (1 + rs))).iloc[-1]
 
 def macd_hist_last(series):
-    fast = series.ewm(span=12, adjust=False).mean()
-    slow = series.ewm(span=26, adjust=False).mean()
+    fast = series.ewm(span=6, adjust=False).mean()
+    slow = series.ewm(span=13, adjust=False).mean()
     macd = fast - slow
-    signal = macd.ewm(span=9, adjust=False).mean()
+    signal = macd.ewm(span=5, adjust=False).mean()
     return (macd - signal).iloc[-1]
 
 def atr_last(df, period=14):
@@ -331,14 +331,15 @@ def detect_market_state(df):
     if atr is None or atr == 0 or pd.isna(atr):
         return None
 
-    # FLAT
-    if (
-        abs(ema50 - ema200) < atr * 0.25 and
-        abs(macd) < atr * 0.20
-    ):
+    atr_avg = atr_last(df.tail(50))
+    if atr < atr_avg * 0.7:
+        return None  # мертвий ринок
+
+    if abs(ema50 - ema200) < atr * 0.3 and abs(macd) < atr * 0.25:
         return "FLAT"
 
-    return ""
+    return "TREND"
+
 
 def analyze_flat(symbol, df):
     high = df["High"]
@@ -349,32 +350,25 @@ def analyze_flat(symbol, df):
     if atr is None or atr == 0:
         return None
 
-    lookback = 60
+    lookback = 80
     support = low.tail(lookback).min()
     resistance = high.tail(lookback).max()
 
     channel = resistance - support
-    if channel < atr * 1.8:
+    if channel < atr * 2.2:
         return None
 
     price = close.iloc[-1]
-    zone = atr * 0.6
+    zone = atr * 0.5
 
     if abs(price - support) <= zone:
-        return {
-            "trend": "КУПИТИ",
-            "type": "FLAT_REBOUND",
-            "strength": 70
-        }
+        return {"trend": "КУПИТИ", "strength": 72}
 
     if abs(price - resistance) <= zone:
-        return {
-            "trend": "ПРОДАТИ",
-            "type": "FLAT_REBOUND",
-            "strength": 70
-        }
+        return {"trend": "ПРОДАТИ", "strength": 72}
 
     return None
+
 
 def analyze_trend(symbol, df, use_15m):
     close = df["Close"]
@@ -391,17 +385,17 @@ def analyze_trend(symbol, df, use_15m):
     trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
     score = 50
 
-    if trend == "КУПИТИ" and 35 < rsi < 55:
+    if trend == "КУПИТИ" and 38 <= rsi <= 50:
         score += 20
-    if trend == "ПРОДАТИ" and 45 < rsi < 65:
+    if trend == "ПРОДАТИ" and 50 <= rsi <= 62:
         score += 20
 
-    if macd > 0 and trend == "КУПИТИ":
-        score += 15
-    if macd < 0 and trend == "ПРОДАТИ":
-        score += 15
+    if macd > atr * 0.05 and trend == "КУПИТИ":
+        score += 20
+    if macd < -atr * 0.05 and trend == "ПРОДАТИ":
+        score += 20
 
-    if score < 70:
+    if score < 75:
         return None
 
     if use_15m:
@@ -409,17 +403,11 @@ def analyze_trend(symbol, df, use_15m):
         if df15 is None or len(df15) < 200:
             return None
 
-        ema50_15 = ema_last(df15["Close"], 50)
-        ema200_15 = ema_last(df15["Close"], 200)
-
-        if (ema50 > ema200) != (ema50_15 > ema200_15):
+        if (ema_last(df15["Close"], 50) > ema_last(df15["Close"], 200)) != (trend == "КУПИТИ"):
             return None
 
-    return {
-        "trend": trend,
-        "type": "TREND_PULLBACK",
-        "strength": min(score, 100)
-    }
+    return {"trend": trend, "strength": score}
+
 
 def analyze(symbol, use_15m):
     df = fetch(symbol, "5m")
@@ -430,15 +418,11 @@ def analyze(symbol, use_15m):
     if state is None:
         return None
 
-    if state == "FLAT":
-        res = analyze_flat(symbol, df)
-    else:
-        res = analyze_trend(symbol, df, use_15m)
-
+    res = analyze_flat(symbol, df) if state == "FLAT" else analyze_trend(symbol, df, use_15m)
     if not res:
         return None
 
-    print(f"MARKET {symbol} | {state} | {res['type']} | strength={res['strength']}")
+    print(f"MARKET {symbol} | {state} | strength={res['strength']}")
 
     return {
         "symbol": symbol,
