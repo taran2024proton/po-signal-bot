@@ -321,6 +321,7 @@ def fetch(symbol: str, interval: str):
 # ---------------- MARKET ANALYSIS ----------------
 
 def detect_market_state(df):
+    print("Detecting market state...")
     close = df["Close"]
 
     ema50 = ema_last(close, 50)
@@ -410,13 +411,18 @@ def analyze_trend(symbol, df, use_15m):
 
 
 def analyze(symbol, use_15m):
+    print(f"Analyzing {symbol}...")
     df5 = fetch(symbol, "5m")
     if df5 is None or len(df5) < 200:
+        print(f"Not enough 5m data for {symbol}")
         return None
 
     state = detect_market_state(df5)
     if state is None:
+        print(f"No market state detected for {symbol}")
         return None
+
+    print(f"Market state for {symbol}: {state}")
 
     if state == "FLAT":
         res = analyze_flat(symbol, df5)
