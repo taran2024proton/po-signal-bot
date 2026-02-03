@@ -410,26 +410,70 @@ def analyze_trend(symbol, df, use_15m):
 
 
 def analyze(symbol, use_15m):
-    df = fetch(symbol, "5m")
-    if df is None or len(df) < 200:
+    df5 = fetch(symbol, "5m")
+    if df5 is None or len(df5) < 200:
         return None
 
-    state = detect_market_state(df)
+    state = detect_market_state(df5)
     if state is None:
         return None
 
-    res = analyze_flat(symbol, df) if state == "FLAT" else analyze_trend(symbol, df, use_15m)
+    if state == "FLAT":
+        res = analyze_flat(symbol, df5)
+    else:
+        res = analyze_trend(symbol, df5, use_15m)
     if not res:
         return None
 
-    print(f"MARKET {symbol} | {state} | strength={res['strength']}")
+    trend = res["trend"]
+
+    df1 = fetch(symbol, "1m")
+    if df1 is None or len(df1) < 30:
+        return None
+
+    entry = analyze_1m_entry(df1, trend)
+    if not entry:
+        return None
+
+    print(f"SIGNAL {symbol} | {trend} | 5m→1m")
 
     return {
         "symbol": symbol,
-        "trend": res["trend"],
+        "signal": entry["signal"],
         "strength": res["strength"],
-        "state": state
+        "expiry": entry["expiry"],
+        "tf_trend": "5m",
+        "tf_entry": "1m"
     }
+
+def analyze_1m_entry(df_1m, trend):
+    close = df_1m["Close"]
+
+    ema9 = close.ewm(span=9).mean()
+    ema21 = close.ewm(span=21).mean()
+
+    last = df_1m.iloc[-1]
+    prev = df_1m.iloc[-2]
+
+    impulse = abs(last["Close"] - prev["Close"])
+
+    threshold_fast = 0.0005
+
+    expiry = 5
+
+    if trend == "КУПИТИ":
+        if prev["Close"] < ema9.iloc[-2] and last["Close"] > ema9.iloc[-1] and ema9.iloc[-1] > ema21.iloc[-1]:
+            if impulse > threshold_fast:
+                expiry = 3
+            return {"signal": "КУПИТИ", "expiry": expiry}
+
+    if trend == "ПРОДАТИ":
+        if prev["Close"] > ema9.iloc[-2] and last["Close"] < ema9.iloc[-1] and ema9.iloc[-1] < ema21.iloc[-1]:
+            if impulse > threshold_fast:
+                expiry = 3
+            return {"signal": "ПРОДАТИ", "expiry": expiry}
+
+    return None
 
 # ================= OTC SCREEN ANALYSIS =================
 
