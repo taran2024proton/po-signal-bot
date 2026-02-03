@@ -321,7 +321,6 @@ def fetch(symbol: str, interval: str):
 # ---------------- MARKET ANALYSIS ----------------
 
 def detect_market_state(df):
-    print("Detecting market state...")
     close = df["Close"]
 
     ema50 = ema_last(close, 50)
@@ -329,18 +328,24 @@ def detect_market_state(df):
     macd = macd_hist_last(close)
     atr = atr_last(df)
 
+    print(f"Detect market state: ema50={ema50}, ema200={ema200}, macd={macd}, atr={atr}")
+
     if atr is None or atr == 0 or pd.isna(atr):
+        print("ATR invalid or zero")
         return None
 
     atr_avg = atr_last(df.tail(50))
+    print(f"ATR average last 50: {atr_avg}")
     if atr < atr_avg * 0.7:
-        return None  # мертвий ринок
+        print("Market is dead (low ATR)")
+        return None
 
     if abs(ema50 - ema200) < atr * 0.3 and abs(macd) < atr * 0.25:
+        print("Market is flat")
         return "FLAT"
 
+    print("Market is trending")
     return "TREND"
-
 
 def analyze_flat(symbol, df):
     high = df["High"]
@@ -348,41 +353,51 @@ def analyze_flat(symbol, df):
     close = df["Close"]
 
     atr = atr_last(df)
+    print(f"Flat analyze: ATR={atr}")
     if atr is None or atr == 0:
+        print("ATR invalid or zero in flat analysis")
         return None
 
     lookback = 80
     support = low.tail(lookback).min()
     resistance = high.tail(lookback).max()
+    print(f"Flat analyze: support={support}, resistance={resistance}")
 
     channel = resistance - support
+    print(f"Channel size: {channel}")
     if channel < atr * 2.2:
+        print("Channel too small in flat analysis")
         return None
 
     price = close.iloc[-1]
     zone = atr * 0.5
-
+    print(f"Price={price}, zone={zone}")
+    
     if abs(price - support) <= zone:
+        print("Flat signal: BUY zone")
         return {"trend": "КУПИТИ", "strength": 72}
 
     if abs(price - resistance) <= zone:
+        print("Flat signal: SELL zone")
         return {"trend": "ПРОДАТИ", "strength": 72}
 
+    print("No flat signal")
     return None
 
 
 def analyze_trend(symbol, df, use_15m):
     close = df["Close"]
+    
     ema50 = ema_last(close, 50)
     ema200 = ema_last(close, 200)
     rsi = rsi_last(close, 7)
     macd = macd_hist_last(close)
     atr = atr_last(df)
 
-    print(f"Trend analysis {symbol}: ema50={ema50:.5f}, ema200={ema200:.5f}, rsi={rsi:.2f}, macd={macd:.5f}, atr={atr:.5f}")
+    print(f"Trend analyze: ema50={ema50}, ema200={ema200}, rsi={rsi}, macd={macd}, atr={atr}")
 
     if atr is None or atr == 0:
-        print("ATR is None or 0")
+        print("ATR invalid or zero in trend analysis")
         return None
 
     trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
@@ -406,44 +421,56 @@ def analyze_trend(symbol, df, use_15m):
 
     if use_15m:
         df15 = fetch(symbol, "15m")
+        print(f"Fetching 15m data for {symbol}, rows: {len(df15) if df15 is not None else 'None'}")
         if df15 is None or len(df15) < 200:
+            print("Not enough 15m data")
             return None
 
-        if (ema_last(df15["Close"], 50) > ema_last(df15["Close"], 200)) != (trend == "КУПИТИ"):
+        ema50_15 = ema_last(df15["Close"], 50)
+        ema200_15 = ema_last(df15["Close"], 200)
+        print(f"15m EMA50={ema50_15}, EMA200={ema200_15}")
+        if (ema50_15 > ema200_15) != (trend == "КУПИТИ"):
+            print("15m trend mismatch")
             return None
-
+            
     return {"trend": trend, "strength": score}
 
-
 def analyze(symbol, use_15m):
-    print(f"Analyzing {symbol}...")
     df5 = fetch(symbol, "5m")
+    print(f"Fetching 5m data for {symbol}, rows: {len(df5) if df5 is not None else 'None'}")
     if df5 is None or len(df5) < 200:
         print(f"Not enough 5m data for {symbol}")
         return None
 
     state = detect_market_state(df5)
-    if state is None:
-        print(f"No market state detected for {symbol}")
-        return None
-
     print(f"Market state for {symbol}: {state}")
+    if state is None:
+        print(f"Market state is None for {symbol}")
+        return None
 
     if state == "FLAT":
         res = analyze_flat(symbol, df5)
+        print(f"Flat analysis result for {symbol}: {res}")
     else:
         res = analyze_trend(symbol, df5, use_15m)
+        print(f"Trend analysis result for {symbol}: {res}")
     if not res:
+        print(f"No analysis result for {symbol}")
         return None
 
     trend = res["trend"]
+    print(f"Determined trend for {symbol}: {trend}")
 
     df1 = fetch(symbol, "1m")
+    print(f"Fetching 1m data for {symbol}, rows: {len(df1) if df1 is not None else 'None'}")
     if df1 is None or len(df1) < 30:
+        print(f"Not enough 1m data for {symbol}")
         return None
 
     entry = analyze_1m_entry(df1, trend)
+    print(f"1m entry analysis for {symbol}: {entry}")
     if not entry:
+        print(f"No entry signal for {symbol}")
         return None
 
     print(f"SIGNAL {symbol} | {trend} | 5m→1m")
@@ -467,25 +494,28 @@ def analyze_1m_entry(df_1m, trend):
     prev = df_1m.iloc[-2]
 
     impulse = abs(last["Close"] - prev["Close"])
-
     threshold_fast = 0.0005
 
     expiry = 5
+
+    print(f"1m entry analyze: last close={last['Close']}, prev close={prev['Close']}, impulse={impulse}, threshold={threshold_fast}")
 
     if trend == "КУПИТИ":
         if prev["Close"] < ema9.iloc[-2] and last["Close"] > ema9.iloc[-1] and ema9.iloc[-1] > ema21.iloc[-1]:
             if impulse > threshold_fast:
                 expiry = 3
+            print(f"Signal BUY with expiry {expiry}")
             return {"signal": "КУПИТИ", "expiry": expiry}
 
     if trend == "ПРОДАТИ":
         if prev["Close"] > ema9.iloc[-2] and last["Close"] < ema9.iloc[-1] and ema9.iloc[-1] < ema21.iloc[-1]:
             if impulse > threshold_fast:
                 expiry = 3
+            print(f"Signal SELL with expiry {expiry}")
             return {"signal": "ПРОДАТИ", "expiry": expiry}
 
+    print("No 1m entry signal")
     return None
-
 # ================= OTC SCREEN ANALYSIS =================
 
 import cv2
