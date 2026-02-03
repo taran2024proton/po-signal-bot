@@ -373,14 +373,16 @@ def analyze_flat(symbol, df):
 
 def analyze_trend(symbol, df, use_15m):
     close = df["Close"]
-
     ema50 = ema_last(close, 50)
     ema200 = ema_last(close, 200)
     rsi = rsi_last(close, 7)
     macd = macd_hist_last(close)
     atr = atr_last(df)
 
+    print(f"Trend analysis {symbol}: ema50={ema50:.5f}, ema200={ema200:.5f}, rsi={rsi:.2f}, macd={macd:.5f}, atr={atr:.5f}")
+
     if atr is None or atr == 0:
+        print("ATR is None or 0")
         return None
 
     trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
@@ -396,7 +398,10 @@ def analyze_trend(symbol, df, use_15m):
     if macd < -atr * 0.05 and trend == "ПРОДАТИ":
         score += 20
 
+    print(f"Score for {symbol}: {score}")
+
     if score < 75:
+        print("Score below threshold")
         return None
 
     if use_15m:
