@@ -415,7 +415,7 @@ def analyze_trend(symbol, df, use_15m):
 
     print(f"Score for {symbol}: {score}")
 
-    if score < 75:
+    if score < 65:
         print("Score below threshold")
         return None
 
