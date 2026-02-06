@@ -426,41 +426,30 @@ def is_pin_bar(candle):
 
 from datetime import datetime, timedelta
 
-def analyze_1m_entry(df_1m, trend):
+def analyze_1m_entry(df_1m, trend, support_levels=None, resistance_levels=None):
+
     if df_1m is None or len(df_1m) < 50:
         return None
 
-    close = df_1m["Close"]
+    recent = df_1m.tail(3)
 
-    # RSI
-    delta = close.diff()
-    gain = delta.clip(lower=0)
-    loss = -delta.clip(upper=0)
+    last_close = recent.iloc[-1]["Close"]
+    prev_close = recent.iloc[-2]["Close"]
 
-    avg_gain = gain.rolling(14).mean()
-    avg_loss = loss.rolling(14).mean()
+    # Простий momentum в сторону тренду
+    if trend == "КУПИТИ":
+        if last_close > prev_close:
+            return {
+                "entry": "CALL",
+                "confidence": 1
+            }
 
-    rs = avg_gain / avg_loss
-    rsi = 100 - (100 / (1 + rs))
-
-    current_rsi = rsi.iloc[-1]
-    current_price = close.iloc[-1]
-
-    print(f"1M ENTRY CHECK → Trend: {trend}, RSI: {current_rsi}")
-
-    # BUY
-    if trend == "КУПИТИ" and current_rsi > 55:
-        return {
-            "direction": "КУПИТИ",
-            "price": current_price
-        }
-
-    # SELL
-    if trend == "ПРОДАТИ" and current_rsi < 45:
-        return {
-            "direction": "ПРОДАТИ",
-            "price": current_price
-        }
+    if trend == "ПРОДАТИ":
+        if last_close < prev_close:
+            return {
+                "entry": "PUT",
+                "confidence": 1
+            }
 
     return None
 
