@@ -60,7 +60,7 @@ app = Flask(__name__)
 USER_MODE = {}  # chat_id -> MARKET | OTC
 
 THRESHOLDS = {
-    "MARKET": {"MIN_STRENGTH": 40, "USE_15M": True},
+    "MARKET": {"MIN_STRENGTH": 50, "USE_15M": True},
     "OTC": {"MIN_STRENGTH": 0, "USE_15M": False},
 }
 
@@ -426,53 +426,43 @@ def is_pin_bar(candle):
 
 from datetime import datetime, timedelta
 
-def analyze_1m_entry(df_1m, trend, support_levels=None, resistance_levels=None):
-    recent = df_1m.tail(3)
-    last_candle = recent.iloc[-1]
-
-    if not is_pin_bar(last_candle):
-        print("No pin bar detected")
+def analyze_1m_entry(df_1m, trend):
+    if df_1m is None or len(df_1m) < 50:
         return None
 
-    last_close = last_candle["Close"]
-    atr = atr_last(df_1m)
-    if atr is None or atr == 0:
-        print("ATR invalid or zero in 1m entry")
-        return None
+    close = df_1m["Close"]
 
-    threshold = atr * 0.5
+    # RSI
+    delta = close.diff()
+    gain = delta.clip(lower=0)
+    loss = -delta.clip(upper=0)
 
-    if trend == "КУПИТИ":
-        if not support_levels:
-            print("No support levels found")
-            return None
-        if not any(abs(last_close - lvl) < threshold for lvl in support_levels):
-            print("Price not near support")
-            return None
-    elif trend == "ПРОДАТИ":
-        if not resistance_levels:
-            print("No resistance levels found")
-            return None
-        if not any(abs(last_close - lvl) < threshold for lvl in resistance_levels):
-            print("Price not near resistance")
-            return None
-            
-    impulse = recent["Close"].iloc[-1] - recent["Close"].iloc[0]
-    impulse_threshold = atr * 0.1
-    if abs(impulse) < impulse_threshold:
-        print("Impulse too weak")
-        return None
-        
-    if trend == "КУПИТИ" and impulse <= 0:
-        print("No bullish impulse")
-        return None
-    if trend == "ПРОДАТИ" and impulse >= 0:
-        print("No bearish impulse")
-        return None
+    avg_gain = gain.rolling(14).mean()
+    avg_loss = loss.rolling(14).mean()
 
-    expiry = datetime.utcnow() + timedelta(minutes=5)
-    print(f"Signal {trend} with expiry in 5 minutes")
-    return {"signal": trend, "expiry": expiry}
+    rs = avg_gain / avg_loss
+    rsi = 100 - (100 / (1 + rs))
+
+    current_rsi = rsi.iloc[-1]
+    current_price = close.iloc[-1]
+
+    print(f"1M ENTRY CHECK → Trend: {trend}, RSI: {current_rsi}")
+
+    # BUY
+    if trend == "КУПИТИ" and current_rsi > 55:
+        return {
+            "direction": "КУПИТИ",
+            "price": current_price
+        }
+
+    # SELL
+    if trend == "ПРОДАТИ" and current_rsi < 45:
+        return {
+            "direction": "ПРОДАТИ",
+            "price": current_price
+        }
+
+    return None
 
 def analyze(symbol, use_15m):
     df5 = fetch(symbol, "5m")
@@ -876,23 +866,13 @@ def automatic_market_analysis(bot, chat_id, assets):
 # ---------------- COMMANDS ----------------
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
+from config import THRESHOLDS
 
 USER_MODE = {}  # chat_id -> "OTC" або "MARKET"
 STATS = {}
 
 EXPIRY_MIN = 5
 MAX_ASSETS = 20
-
-THRESHOLDS = {
-    "MARKET": {
-        "USE_15M": True,
-        "MIN_STRENGTH": 65,
-    },
-    "OTC": {
-        "USE_15M": False,
-        "MIN_STRENGTH": 0,
-    }
-}
 
 @bot.message_handler(commands=["start", "help"])
 def start_help(msg):
