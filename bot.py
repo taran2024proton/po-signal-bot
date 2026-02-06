@@ -435,6 +435,78 @@ def analyze_trend(symbol, df, use_15m):
             
     return {"trend": trend, "strength": score}
 
+def find_support_resistance(df, window=20):
+    highs = df["High"].rolling(window=window, center=True).max()
+    lows = df["Low"].rolling(window=window, center=True).min()
+
+    resistance_levels = df["High"][(df["High"] == highs)].tolist()
+    support_levels = df["Low"][(df["Low"] == lows)].tolist()
+
+    resistance_levels = sorted(set(round(x, 5) for x in resistance_levels))
+    support_levels = sorted(set(round(x, 5) for x in support_levels))
+
+    return support_levels, resistance_levels
+
+def is_pin_bar(candle):
+    body = abs(candle["Close"] - candle["Open"])
+    range_ = candle["High"] - candle["Low"]
+    upper_shadow = candle["High"] - max(candle["Close"], candle["Open"])
+    lower_shadow = min(candle["Close"], candle["Open"]) - candle["Low"]
+
+    if body < range_ * 0.3 and (upper_shadow > body * 2 or lower_shadow > body * 2):
+        return True
+    return False
+
+from datetime import datetime, timedelta
+
+def analyze_1m_entry(df_1m, trend, support_levels=None, resistance_levels=None):
+    recent = df_1m.tail(3)
+    last_candle = recent.iloc[-1]
+
+    if not is_pin_bar(last_candle):
+        print("No pin bar detected")
+        return None
+
+    last_close = last_candle["Close"]
+    atr = atr_last(df_1m)
+    if atr is None or atr == 0:
+        print("ATR invalid or zero in 1m entry")
+        return None
+
+    threshold = atr * 0.5
+
+    if trend == "КУПИТИ":
+        if not support_levels:
+            print("No support levels found")
+            return None
+        if not any(abs(last_close - lvl) < threshold for lvl in support_levels):
+            print("Price not near support")
+            return None
+    elif trend == "ПРОДАТИ":
+        if not resistance_levels:
+            print("No resistance levels found")
+            return None
+        if not any(abs(last_close - lvl) < threshold for lvl in resistance_levels):
+            print("Price not near resistance")
+            return None
+            
+    impulse = recent["Close"].iloc[-1] - recent["Close"].iloc[0]
+    impulse_threshold = atr * 0.1
+    if abs(impulse) < impulse_threshold:
+        print("Impulse too weak")
+        return None
+        
+    if trend == "КУПИТИ" and impulse <= 0:
+        print("No bullish impulse")
+        return None
+    if trend == "ПРОДАТИ" and impulse >= 0:
+        print("No bearish impulse")
+        return None
+
+    expiry = datetime.utcnow() + timedelta(minutes=5)
+    print(f"Signal {trend} with expiry in 5 minutes")
+    return {"signal": trend, "expiry": expiry}
+
 def analyze(symbol, use_15m):
     df5 = fetch(symbol, "5m")
     if df5 is None or len(df5) < 200:
@@ -466,13 +538,15 @@ def analyze(symbol, use_15m):
     trend = res["trend"]
     print(f"Determined trend for {symbol}: {trend}")
 
+    support_levels, resistance_levels = find_support_resistance(df5, window=20)
+
     df1 = fetch(symbol, "1m")
     print(f"Fetching 1m data for {symbol}, rows: {len(df1) if df1 is not None else 'None'}")
     if df1 is None or len(df1) < 30:
         print(f"Not enough 1m data for {symbol}")
         return None
 
-    entry = analyze_1m_entry(df1, trend)
+    entry = analyze_1m_entry(df1, trend, support_levels, resistance_levels)
     print(f"1m entry analysis for {symbol}: {entry}")
     if not entry:
         print(f"No entry signal for {symbol}")
@@ -489,38 +563,6 @@ def analyze(symbol, use_15m):
         "tf_entry": "1m"
     }
 
-def analyze_1m_entry(df_1m, trend):
-    close = df_1m["Close"]
-
-    ema9 = close.ewm(span=9).mean()
-    ema21 = close.ewm(span=21).mean()
-
-    last = df_1m.iloc[-1]
-    prev = df_1m.iloc[-2]
-
-    impulse = abs(last["Close"] - prev["Close"])
-    threshold_fast = 0.0005
-
-    expiry = 5
-
-    print(f"1m entry analyze: last close={last['Close']}, prev close={prev['Close']}, impulse={impulse}, threshold={threshold_fast}")
-
-    if trend == "КУПИТИ":
-        if prev["Close"] < ema9.iloc[-2] and last["Close"] > ema9.iloc[-1] and ema9.iloc[-1] > ema21.iloc[-1]:
-            if impulse > threshold_fast:
-                expiry = 3
-            print(f"Signal BUY with expiry {expiry}")
-            return {"signal": "КУПИТИ", "expiry": expiry}
-
-    if trend == "ПРОДАТИ":
-        if prev["Close"] > ema9.iloc[-2] and last["Close"] < ema9.iloc[-1] and ema9.iloc[-1] < ema21.iloc[-1]:
-            if impulse > threshold_fast:
-                expiry = 3
-            print(f"Signal SELL with expiry {expiry}")
-            return {"signal": "ПРОДАТИ", "expiry": expiry}
-
-    print("No 1m entry signal")
-    return None
 # ================= OTC SCREEN ANALYSIS =================
 
 import cv2
