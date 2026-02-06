@@ -37,7 +37,7 @@ LAST_SIGNAL_TIME = {}
 # API CACHE (1 хв)
 # =====================
 API_CACHE = {}
-CACHE_TTL = 60  # секунд
+CACHE_TTL = 120  # секунд
 
 # ---------------- CONFIG ----------------
 TOKEN = os.getenv("TELEGRAM_TOKEN")
@@ -47,7 +47,7 @@ WEBHOOK_URL = "https://po-signal-bot-gwu0.onrender.com/webhook"
 
 ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
-CACHE_SECONDS = 120
+CACHE_SECONDS = CACHE_TTL
 
 EXPIRY_MIN = 5
 MAX_ASSETS = 15
@@ -97,8 +97,9 @@ def next_m5_entry_time():
 # ---------------- CACHE ----------------
 def load_cache():
     try:
-        return json.loads(Path(CACHE_FILE).read_text())
-    except:
+        text = Path(CACHE_FILE).read_text()
+        return json.loads(text)
+    except Exception:
         return {}
 
 def save_cache(c):
@@ -119,61 +120,27 @@ def cache_get(key):
     if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
         cache.pop(key, None)
         return None
-    return item["data"]
+    data = item["data"]
+    
+    if isinstance(data, list):
+        try:
+            df = pd.DataFrame(data)
+            if "datetime" in df.columns:
+                df["datetime"] = pd.to_datetime(df["datetime"])
+            return df
+        except Exception:
+            return data
+    return data
 
 def cache_set(key, data):
-    cache[key] = {"ts": datetime.now(UTC).isoformat(), "data": data}
+    if isinstance(data, pd.DataFrame):
+        data_to_save = data.to_dict(orient="records")
+    else:
+        data_to_save = data
+    cache[key] = {"ts": datetime.now(UTC).isoformat(), "data": data_to_save}
     if len(cache) > 50:
         cache.pop(next(iter(cache)))
     save_cache(cache)
-    
-# ---------------- REALTIME MARKET DATA ----------------
-def fetch_realtime(symbol):
-    api_key = os.getenv("TWELVEDATA_API_KEY")
-    if not api_key:
-        print("ERROR: TWELVEDATA_API_KEY not set")
-        return None
-
-    # Twelve Data використовує формат символів з косою рискою (наприклад, "USD/JPY")
-    symbol_td = normalize_symbol(symbol)
-
-    cache_key = f"realtime:{symbol_td}"
-    cached = cache_get(cache_key)
-    if cached:
-        return cached
-
-    url = "https://api.twelvedata.com/quote"
-    params = {
-        "symbol": symbol,
-        "apikey": api_key
-    }
-
-    try:
-        r = requests.get(url, params=params, timeout=5)
-        data = r.json()
-
-        if data.get("status") == "error":
-            print(f"TwelveData error ({symbol_td}): {data.get('message')}")
-            return None
-
-        required = ["open", "high", "low", "close"]
-        if not all(k in data for k in required):
-            print(f"ERROR: incomplete quote data for {symbol_td}: {data}")
-            return None
-
-        result = {
-            "Open": float(data["open"]),
-            "High": float(data["high"]),
-            "Low": float(data["low"]),
-            "Close": float(data["close"])
-        }
-
-        cache_set(cache_key, result)
-        return result
-
-    except Exception as e:
-        print(f"ERROR in fetch_realtime ({symbol_td}): {e}")
-        return None
 
 # ---------------- INDICATORS (MARKET) ----------------
 def ema_last(series, period):
@@ -1178,4 +1145,4 @@ if __name__ == "__main__":
     print(f"Webhook URL should be set to: {WEBHOOK_URL}")
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
-    bot.polling()
+    # bot.polling()  # <- закоментовано!
