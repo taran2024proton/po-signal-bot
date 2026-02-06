@@ -60,7 +60,7 @@ app = Flask(__name__)
 USER_MODE = {}  # chat_id -> MARKET | OTC
 
 THRESHOLDS = {
-    "MARKET": {"MIN_STRENGTH": 65, "USE_15M": True},
+    "MARKET": {"MIN_STRENGTH": 40, "USE_15M": True},
     "OTC": {"MIN_STRENGTH": 0, "USE_15M": False},
 }
 
