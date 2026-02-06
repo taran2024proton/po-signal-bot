@@ -415,11 +415,6 @@ def analyze_trend(symbol, df, use_15m):
 
     print(f"Score for {symbol}: {score}")
 
-    mode = USER_MODE.get(chat_id, "MARKET")
-    threshold = THRESHOLDS[mode]["MIN_STRENGTH"]
-
-    print(f"Threshold for {mode}: {threshold}")
-
     if score < 65:
         print("Score below threshold")
         return None
