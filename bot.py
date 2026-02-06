@@ -420,9 +420,9 @@ def analyze_trend(symbol, df, use_15m):
 
     print(f"Threshold for {mode}: {threshold}")
 
-    if score < threshold:
-    print("Score below threshold")
-    return None
+    if score < 65:
+        print("Score below threshold")
+        return None
 
     if use_15m:
         df15 = fetch(symbol, "15m")
@@ -442,7 +442,6 @@ def analyze_trend(symbol, df, use_15m):
 
 def analyze(symbol, use_15m):
     df5 = fetch(symbol, "5m")
-    print(f"Fetching 5m data for {symbol}, rows: {len(df5) if df5 is not None else 'None'}")
     if df5 is None or len(df5) < 200:
         print(f"Not enough 5m data for {symbol}")
         return None
@@ -460,7 +459,13 @@ def analyze(symbol, use_15m):
         res = analyze_trend(symbol, df5, use_15m)
         print(f"Trend analysis result for {symbol}: {res}")
     if not res:
-        print(f"No analysis result for {symbol}")
+        print(f"5m returned None for {symbol}")
+        return None
+
+    min_strength = THRESHOLDS["MARKET"]["MIN_STRENGTH"]
+
+    if res["strength"] < min_strength:
+        print(f"Strength too low on 5m for {symbol}")
         return None
 
     trend = res["trend"]
