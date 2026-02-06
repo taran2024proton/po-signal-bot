@@ -866,7 +866,6 @@ def automatic_market_analysis(bot, chat_id, assets):
 # ---------------- COMMANDS ----------------
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import threading
-from config import THRESHOLDS
 
 USER_MODE = {}  # chat_id -> "OTC" або "MARKET"
 STATS = {}
