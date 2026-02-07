@@ -481,16 +481,16 @@ def analyze(symbol, use_15m):
 
     entry = analyze_1m_entry(df1, trend, support_levels, resistance_levels)
     print(f"1m entry analysis for {symbol}: {entry}")
-    if entry:
+    if not entry:
         print(f"No entry signal for {symbol}")
-        res["strength"] += 5
-        return None
+        return None       
 
     print(f"SIGNAL {symbol} | {trend} | 5m→1m")
 
+    res["strength"] += 5
     return {
         "symbol": symbol,
-        "signal": entry["signal"],
+        "signal": entry["entry"],
         "strength": res["strength"]
     }
 
