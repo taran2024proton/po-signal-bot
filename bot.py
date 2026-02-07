@@ -60,7 +60,7 @@ app = Flask(__name__)
 USER_MODE = {}  # chat_id -> MARKET | OTC
 
 THRESHOLDS = {
-    "MARKET": {"MIN_STRENGTH": 50, "USE_15M": True},
+    "MARKET": {"MIN_STRENGTH": 65, "USE_15M": True},
     "OTC": {"MIN_STRENGTH": 0, "USE_15M": False},
 }
 
@@ -173,27 +173,14 @@ def atr_last(df, period=14):
 def get_assets():
     assets = [
         # Валютні пари (FX)
-        {"symbol": "FX:AUD_CAD", "display": "AUD/CAD", "category": "forex"},
-        {"symbol": "FX:AUD_CHF", "display": "AUD/CHF", "category": "forex"},
-        {"symbol": "FX:AUD_JPY", "display": "AUD/JPY", "category": "forex"},
-        {"symbol": "FX:AUD_USD", "display": "AUD/USD", "category": "forex"},
-        {"symbol": "FX:CAD_CHF", "display": "CAD/CHF", "category": "forex"},
-        {"symbol": "FX:CAD_JPY", "display": "CAD/JPY", "category": "forex"},
-        {"symbol": "FX:CHF_JPY", "display": "CHF/JPY", "category": "forex"},
-        {"symbol": "FX:EUR_AUD", "display": "EUR/AUD", "category": "forex"},
-        {"symbol": "FX:EUR_CAD", "display": "EUR/CAD", "category": "forex"},
-        {"symbol": "FX:EUR_CHF", "display": "EUR/CHF", "category": "forex"},
-        {"symbol": "FX:EUR_GBP", "display": "EUR/GBP", "category": "forex"},
         {"symbol": "FX:EUR_USD", "display": "EUR/USD", "category": "forex"},
-        {"symbol": "FX:EUR_JPY", "display": "EUR/JPY", "category": "forex"},
-        {"symbol": "FX:GBP_AUD", "display": "GBP/AUD", "category": "forex"},
-        {"symbol": "FX:GBP_CHF", "display": "GBP/CHF", "category": "forex"},
-        {"symbol": "FX:GBP_JPY", "display": "GBP/JPY", "category": "forex"},
         {"symbol": "FX:GBP_USD", "display": "GBP/USD", "category": "forex"},
-        {"symbol": "FX:GBP_CAD", "display": "GBP/CAD", "category": "forex"},
-        {"symbol": "FX:USD_CAD", "display": "USD/CAD", "category": "forex"},
-        {"symbol": "FX:USD_CHF", "display": "USD/CHF", "category": "forex"},
         {"symbol": "FX:USD_JPY", "display": "USD/JPY", "category": "forex"},
+        {"symbol": "FX:USD_CHF", "display": "USD/CHF", "category": "forex"},
+        {"symbol": "FX:AUD_USD", "display": "AUD/USD", "category": "forex"},
+        {"symbol": "FX:EUR_CHF", "display": "EUR/CHF", "category": "forex"},
+        {"symbol": "FX:AUD_CHF", "display": "AUD/CHF", "category": "forex"},
+        {"symbol": "FX:USD_CAD", "display": "USD/CAD", "category": "forex"},
     ]
 
     if not Path(ASSETS_FILE).exists():
@@ -368,7 +355,7 @@ def analyze_trend(symbol, df, use_15m):
         return None
 
     trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
-    score = 50
+    score = 65
 
     if trend == "КУПИТИ" and 38 <= rsi <= 50:
         score += 20
@@ -494,8 +481,9 @@ def analyze(symbol, use_15m):
 
     entry = analyze_1m_entry(df1, trend, support_levels, resistance_levels)
     print(f"1m entry analysis for {symbol}: {entry}")
-    if not entry:
+    if entry:
         print(f"No entry signal for {symbol}")
+        res["strength"] += 5
         return None
 
     print(f"SIGNAL {symbol} | {trend} | 5m→1m")
@@ -503,10 +491,7 @@ def analyze(symbol, use_15m):
     return {
         "symbol": symbol,
         "signal": entry["signal"],
-        "strength": res["strength"],
-        "expiry": entry["expiry"],
-        "tf_trend": "5m",
-        "tf_entry": "1m"
+        "strength": res["strength"]
     }
 
 # ================= OTC SCREEN ANALYSIS =================
@@ -786,7 +771,7 @@ def automatic_market_analysis(bot, chat_id, assets):
     index = 0
     assets_count = len(assets)
     while USER_MODE.get(chat_id) == "MARKET":
-        for _ in range(6):
+        for _ in range(1):
             asset = assets[index % assets_count]
             symbol = asset["symbol"]
             display_name = asset["display"]
@@ -843,7 +828,7 @@ def automatic_market_analysis(bot, chat_id, assets):
                     
                     LAST_SIGNAL_TIME[symbol] = now
                     
-                time.sleep(7)
+                time.sleep(15)
                 
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
