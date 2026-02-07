@@ -118,6 +118,7 @@ def cache_get(key):
     if ts.tzinfo is None:
         ts = ts.replace(tzinfo=UTC)
     if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
+        print(f"Cache expired for key {key}")
         cache.pop(key, None)
         return None
     data = item["data"]
@@ -216,7 +217,7 @@ def fetch(symbol: str, interval: str):
     cache_key = f"candles:{symbol_td}:{interval_td}"
     cached = cache_get(cache_key)
     if cached:
-        return pd.read_json(io.StringIO(cached))
+        return cached
 
     limit = CANDLES_BACK.get(interval_td, 300)
 
@@ -491,7 +492,8 @@ def analyze(symbol, use_15m):
     return {
         "symbol": symbol,
         "signal": entry["entry"],
-        "strength": res["strength"]
+        "strength": res["strength"],
+        "trend": res["trend"]
     }
 
 # ================= OTC SCREEN ANALYSIS =================
@@ -788,7 +790,7 @@ def automatic_market_analysis(bot, chat_id, assets):
                     entry_time = next_m5_entry_time()
                     trend = res["trend"].lower()
 
-                    signal_key = f"{symbol}|{trend}|{entry_time}"
+                    signal_key = f"{symbol}|{trend}|{entry_time}|{chat_id}"
 
                     if LAST_SIGNALS.get(chat_id) == signal_key:
                         index += 1
@@ -860,6 +862,12 @@ def start_help(msg):
 def stop_mode(msg):
     USER_MODE[msg.chat.id] = None  # або можна del USER_MODE[msg.chat.id], якщо хочеш повністю прибрати
     bot.send_message(msg.chat.id, "⏹ Режим MARKET вимкнено. Аналіз зупинено.")
+
+@bot.message_handler(commands=["testsignal"])
+def testsignal(msg):
+    symbol = "FX:EUR_USD"
+    res = analyze(symbol, use_15m=True)
+    bot.send_message(msg.chat.id, f"Test analyze for {symbol}: {res}")
 
 @bot.message_handler(commands=["otc"])
 def otc_mode(msg):
