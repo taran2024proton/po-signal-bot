@@ -58,6 +58,7 @@ bot = telebot.TeleBot(TOKEN, parse_mode="HTML", threaded=False)
 app = Flask(__name__)
 
 USER_MODE = {}  # chat_id -> MARKET | OTC
+ACTIVE_THREADS = {}
 
 THRESHOLDS = {
     "MARKET": {"MIN_STRENGTH": 65, "USE_15M": True},
@@ -694,7 +695,7 @@ def otc_analyze(candles):
     return {
         "direction": "CALL" if near_low else "PUT",
         "exp": 3 if strong_reject else 2,
-        "type": "OTC_STRONG_REJECTION" if strong_reject else "OTC_SOFT_REJECTION"
+        "type": "OTC_STRONG_REJECTION" if strong else "OTC_SOFT_REJECTION"
     }, "OK"
     
 # TREND FOLLOWING ANALYZE 
@@ -918,16 +919,21 @@ def otc_mode(msg):
         
 @bot.message_handler(commands=["market"])
 def market_mode(msg):
-    USER_MODE[msg.chat.id] = "MARKET"
-    bot.send_message(msg.chat.id, "📊 Режим MARKET увімкнено. Аналізую пари.")
+    chat_id = msg.chat.id
+    USER_MODE[chat_id] = "MARKET"
 
+    if chat_id in ACTIVE_THREADS and ACTIVE_THREADS[chat_id].is_alive():
+        bot.send_message(chat_id, "📊 Аналіз уже активний. Очікуйте на сигнали.")
+        return
+    
+    bot.send_message(msg.chat.id, "📊 Режим MARKET увімкнено. Аналізую пари.")
     assets = get_assets()
     
-    # Запускаємо автоматичний аналіз у фоновому потоці
-    analysis_thread = threading.Thread(target=automatic_market_analysis, args=(bot, msg.chat.id, assets))
-    analysis_thread.daemon = True
-    analysis_thread.start()
-
+    t = threading.Thread(target=automatic_market_analysis, args=(bot, msg.chat.id, assets))
+    t.daemon = True
+    t.start()
+    ACTIVE_THREADS[chat_id] = t
+    
 STATS = {}
 
 @bot.message_handler(commands=["stats"])
@@ -1139,7 +1145,12 @@ def root():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    print("Starting bot server...")
-    print(f"Webhook URL should be set to: {WEBHOOK_URL}")
-    port = int(os.environ.get("PORT", 5000))
+    try:
+        bot.remove_webhook()
+        bot.set_webhook(url=WEBHOOK_URL)
+        print(f"Webhook set to {WEBHOOK_URL}")
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
