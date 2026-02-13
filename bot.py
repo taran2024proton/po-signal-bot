@@ -379,8 +379,8 @@ def analyze_trend(symbol, df, use_15m):
     print(f"ADX={adx}")
 
     if adx < 18:
-    print("Trend too weak (ADX)")
-    return None
+        print("Trend too weak (ADX)")
+        return None
 
     print(f"Trend analyze: ema50={ema50}, ema200={ema200}, rsi={rsi}, macd={macd}, atr={atr}")
 
