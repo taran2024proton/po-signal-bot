@@ -3,7 +3,7 @@
 # =====================
 
 import json
-import threading
+import threading import Thread
 from pathlib import Path
 from datetime import datetime, timedelta, timezone
 import os
@@ -1120,12 +1120,12 @@ def webhook():
     data = request.get_data(as_text=True)
     print(f"DEBUG: Отримано update json: {data}")
 
-    update = telebot.types.Update.de_json(data)
-    print(f"DEBUG: Створено об'єкт update: {update}")
-
     try:
-        bot.process_new_updates([update])
-        print("DEBUG: Виконано process_new_updates")
+        update = telebot.types.Update.de_json(data)
+        print(f"DEBUG: Створено об'єкт update: {update}")
+
+        Thread(target=lambda: bot.process_new_updates([update])).start()
+        print("DEBUG: Виконано process_new_updates в Thread")
     except Exception as e:
         print(f"ERROR в process_new_updates: {e}")
 
