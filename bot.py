@@ -1124,7 +1124,7 @@ def webhook():
     print(f"DEBUG: Створено об'єкт update: {update}")
 
     try:
-        bot.process_new_updates([update])  # Замість threading.Thread(...)
+        bot.process_new_updates([update])
         print("DEBUG: Виконано process_new_updates")
     except Exception as e:
         print(f"ERROR в process_new_updates: {e}")
@@ -1139,10 +1139,7 @@ def root():
 
 # ---------------- RUN ----------------
 if __name__ == "__main__":
-    import os
-
     print("Starting bot server...")
     print(f"Webhook URL should be set to: {WEBHOOK_URL}")
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port)
-    # bot.polling()  # <- закоментовано!
