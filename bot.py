@@ -169,6 +169,33 @@ def atr_last(df, period=14):
     lc = (df["Low"] - df["Close"].shift()).abs()
     tr = pd.concat([hl, hc, lc], axis=1).max(axis=1)
     return tr.rolling(period).mean().iloc[-1]
+
+def adx_last(df, period=14):
+    df = df.copy()
+
+    df["TR"] = pd.concat([
+        df["High"] - df["Low"],
+        (df["High"] - df["Close"].shift()).abs(),
+        (df["Low"] - df["Close"].shift()).abs()
+    ], axis=1).max(axis=1)
+
+    df["+DM"] = df["High"].diff()
+    df["-DM"] = df["Low"].diff() * -1
+
+    df["+DM"] = df.apply(lambda x: x["+DM"] if x["+DM"] > x["-DM"] and x["+DM"] > 0 else 0, axis=1)
+    df["-DM"] = df.apply(lambda x: x["-DM"] if x["-DM"] > x["+DM"] and x["-DM"] > 0 else 0, axis=1)
+
+    tr14 = df["TR"].rolling(period).sum()
+    plus14 = df["+DM"].rolling(period).sum()
+    minus14 = df["-DM"].rolling(period).sum()
+
+    plusDI = 100 * (plus14 / tr14)
+    minusDI = 100 * (minus14 / tr14)
+
+    dx = (abs(plusDI - minusDI) / (plusDI + minusDI)) * 100
+    adx = dx.rolling(period).mean()
+
+    return adx.iloc[-1]
     
 # ---------------- ASSETS ----------------
 def get_assets():
@@ -348,6 +375,12 @@ def analyze_trend(symbol, df, use_15m):
     rsi = rsi_last(close, 7)
     macd = macd_hist_last(close)
     atr = atr_last(df)
+    adx = adx_last(df)
+    print(f"ADX={adx}")
+
+    if adx < 18:
+    print("Trend too weak (ADX)")
+    return None
 
     print(f"Trend analyze: ema50={ema50}, ema200={ema200}, rsi={rsi}, macd={macd}, atr={atr}")
 
@@ -419,25 +452,31 @@ def analyze_1m_entry(df_1m, trend, support_levels=None, resistance_levels=None):
     if df_1m is None or len(df_1m) < 50:
         return None
 
-    recent = df_1m.tail(3)
+    close = df_1m["Close"]
+    open_ = df_1m["Open"]
 
-    last_close = recent.iloc[-1]["Close"]
-    prev_close = recent.iloc[-2]["Close"]
+    ema20 = close.ewm(span=20, adjust=False).mean()
+    last = df_1m.iloc[-1]
+    prev = df_1m.iloc[-2]
 
-    # Простий momentum в сторону тренду
+    body = abs(last["Close"] - last["Open"])
+    avg_body = abs(close.diff()).rolling(20).mean().iloc[-1]
+
     if trend == "КУПИТИ":
-        if last_close > prev_close:
-            return {
-                "entry": "CALL",
-                "confidence": 1
-            }
+        if (
+            last["Close"] > ema20.iloc[-1] and
+            last["Close"] > prev["Close"] and
+            body > avg_body * 0.8
+        ):
+            return {"entry": "CALL", "confidence": 2}
 
     if trend == "ПРОДАТИ":
-        if last_close < prev_close:
-            return {
-                "entry": "PUT",
-                "confidence": 1
-            }
+        if (
+            last["Close"] < ema20.iloc[-1] and
+            last["Close"] < prev["Close"] and
+            body > avg_body * 0.8
+        ):
+            return {"entry": "PUT", "confidence": 2}
 
     return None
 
@@ -767,7 +806,7 @@ def analyze_market(candles):
 import time
 import threading
 
-MIN_STRENGTH = 65
+MIN_STRENGTH = 70
 
 def automatic_market_analysis(bot, chat_id, assets):
     index = 0
@@ -932,7 +971,7 @@ def market_pair_selected(call):
 
     mode = USER_MODE.get(chat_id, "MARKET")
     use_15m = THRESHOLDS[mode].get("USE_15M", True)
-    min_strength = THRESHOLDS[mode].get("MIN_STRENGTH", 65)
+    min_strength = THRESHOLDS[mode].get("MIN_STRENGTH", 70)
 
     try:
         res = analyze(symbol, use_15m)
