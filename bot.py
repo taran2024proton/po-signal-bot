@@ -390,6 +390,15 @@ def analyze_trend(symbol, df, use_15m):
         return None
 
     trend = "КУПИТИ" if ema50 > ema200 else "ПРОДАТИ"
+
+    if trend == "ПРОДАТИ" and rsi < 32:
+        print(f"DEBUG: RSI ({rsi:.1f}) занадто низький для ПРОДАЖУ - ризик розвороту!")
+        return None
+    
+    if trend == "КУПИТИ" and rsi > 68:
+        print(f"DEBUG: RSI ({rsi:.1f}) занадто високий для КУПІВЛІ - ризик розвороту!")
+        return None
+
     score = 65
 
     if trend == "КУПИТИ" and 38 <= rsi <= 50:
@@ -886,7 +895,7 @@ import threading
 USER_MODE = {}  # chat_id -> "OTC" або "MARKET"
 STATS = {}
 
-EXPIRY_MIN = 5
+EXPIRY_MIN = 3
 MAX_ASSETS = 20
 
 @bot.message_handler(commands=["start", "help"])
