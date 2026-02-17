@@ -49,7 +49,7 @@ ASSETS_FILE = "assets.json"
 CACHE_FILE = "cache.json"
 CACHE_SECONDS = CACHE_TTL
 
-EXPIRY_MIN = 5
+EXPIRY_MIN = 3
 MAX_ASSETS = 15
 
 UTC = timezone.utc
@@ -467,7 +467,7 @@ def analyze_1m_entry(df_1m, trend, support_levels=None, resistance_levels=None):
         if (
             last["Close"] > ema20.iloc[-1] and
             last["Close"] > prev["Close"] and
-            body > avg_body * 0.8
+            body > avg_body * 0.5
         ):
             return {"entry": "CALL", "confidence": 2}
 
@@ -475,7 +475,7 @@ def analyze_1m_entry(df_1m, trend, support_levels=None, resistance_levels=None):
         if (
             last["Close"] < ema20.iloc[-1] and
             last["Close"] < prev["Close"] and
-            body > avg_body * 0.8
+            body > avg_body * 0.5
         ):
             return {"entry": "PUT", "confidence": 2}
 
