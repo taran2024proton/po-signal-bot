@@ -910,7 +910,7 @@ def automatic_market_analysis(bot, chat_id, assets):
 
             index += 1
             
-        time.sleep(12)
+        time.sleep(20)
     
 # ---------------- COMMANDS ----------------
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
