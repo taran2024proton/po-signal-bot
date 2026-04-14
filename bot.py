@@ -74,8 +74,8 @@ def normalize_symbol(symbol: str) -> str:
 from datetime import datetime, timedelta
 
 def next_m5_entry_time():
-    now = datetime.utcnow()
-    now_local = now + timedelta(hours=2)
+    tz = pytz.timezone("Europe/Kyiv")
+    now_local = datetime.now(tz)
     
     minute = (now_local.minute // 5 + 1) * 5
 
@@ -197,6 +197,26 @@ def adx_last(df, period=14):
     adx = dx.rolling(period).mean()
 
     return adx.iloc[-1]
+
+def get_smart_expiry(res, df5):
+    atr = atr_last(df5)
+    adx = adx_last(df5)
+    strength = res["strength"]
+
+    # дуже сильний імпульс
+    if strength > 90:
+        return 2
+
+    # сильний тренд
+    if adx > 28:
+        return 5
+
+    # середній ринок
+    if 20 < adx <= 28:
+        return 3
+
+    # флет / слабкий ринок
+    return 2
     
 # ---------------- ASSETS ----------------
 def get_assets():
@@ -854,6 +874,9 @@ def automatic_market_analysis(bot, chat_id, assets):
                         trend_display = "🔴 Продати"
                     else:
                         trend_display = trend_raw
+
+                   df5 = fetch(symbol, "5m")
+                   expiry = get_smart_expiry(res, df5) 
                         
                     message = (
                         f"🔥 <b>MARKET SIGNAL</b>\n"
@@ -895,7 +918,7 @@ import threading
 USER_MODE = {}  # chat_id -> "OTC" або "MARKET"
 STATS = {}
 
-EXPIRY_MIN = 3
+EXPIRY_MIN = 5
 MAX_ASSETS = 20
 
 @bot.message_handler(commands=["start", "help"])
@@ -1009,13 +1032,20 @@ def market_pair_selected(call):
         InlineKeyboardButton("❌", callback_data=f"loss|{symbol}|{entry_time}")
     )
 
+    df5 = fetch(symbol, "5m")
+
+    if df5 is None:
+        expiry = 3
+    else:
+        expiry = get_smart_expiry(res, df5)
+
     bot.send_message(
         chat_id,
         f"🔥 <b>MARKET SIGNAL</b>\n"
         f"📌 <code>{display}</code>\n"
         f"🔔 {res['trend']} | {res['strength']}%\n"
         f"🕒 Вхід в угоду: <b>{entry_time}</b>\n"
-        f"⏱ Expiry {EXPIRY_MIN} хв",
+        f"⏱ Expiry {expiry} хв",
         parse_mode="HTML",
         reply_markup=markup
     )
