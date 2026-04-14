@@ -888,7 +888,7 @@ def automatic_market_analysis(bot, chat_id, assets):
                         f"🪙 <code>{display_name}</code>\n"
                         f"{trend_display} | {res['strength']}%\n"
                         f"⏰ Вхід: <b>{entry_time}</b>\n"
-                        f"⏳ Експірація: {EXPIRY_MIN} хв"
+                        f"⏳ Експірація: {expiry} хв"
                     )
 
                     markup = InlineKeyboardMarkup()
