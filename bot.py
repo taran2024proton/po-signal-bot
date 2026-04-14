@@ -116,13 +116,14 @@ def cache_get(key):
     item = cache.get(key)
     if not item:
         return None
-    ts = datetime.fromisoformat(item["ts"])
-    if ts.tzinfo is None:
-        ts = ts.replace(tzinfo=UTC)
+        
+    ts = datetime.fromisoformat(item["ts"]).replace(tzinfo=UTC)
+    
     if datetime.now(UTC) - ts > timedelta(seconds=CACHE_SECONDS):
         print(f"Cache expired for key {key}")
         cache.pop(key, None)
         return None
+        
     data = item["data"]
     
     if isinstance(data, list):
@@ -315,7 +316,7 @@ def fetch(symbol: str, interval: str):
 
         df = df.iloc[::-1].reset_index(drop=True)
 
-        cache_set(cache_key, df.to_json())
+        cache_set(cache_key, df)
         return df
 
     except Exception as e:
