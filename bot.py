@@ -875,8 +875,8 @@ def automatic_market_analysis(bot, chat_id, assets):
                     else:
                         trend_display = trend_raw
 
-                   df5 = fetch(symbol, "5m")
-                   expiry = get_smart_expiry(res, df5) 
+                    df5 = fetch(symbol, "5m")
+                    expiry = get_smart_expiry(res, df5) 
                         
                     message = (
                         f"🔥 <b>MARKET SIGNAL</b>\n"
