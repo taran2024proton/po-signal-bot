@@ -227,10 +227,6 @@ def get_assets():
         {"symbol": "FX:EUR_USD", "display": "EUR/USD", "category": "forex"},
         {"symbol": "FX:GBP_USD", "display": "GBP/USD", "category": "forex"},
         {"symbol": "FX:USD_JPY", "display": "USD/JPY", "category": "forex"},
-        {"symbol": "FX:USD_CHF", "display": "USD/CHF", "category": "forex"},
-        {"symbol": "FX:AUD_USD", "display": "AUD/USD", "category": "forex"},
-        {"symbol": "FX:EUR_CHF", "display": "EUR/CHF", "category": "forex"},
-        {"symbol": "FX:AUD_CHF", "display": "AUD/CHF", "category": "forex"},
         {"symbol": "FX:USD_CAD", "display": "USD/CAD", "category": "forex"},
     ]
 
@@ -266,8 +262,12 @@ def fetch(symbol: str, interval: str):
 
     cache_key = f"candles:{symbol_td}:{interval_td}"
     cached = cache_get(cache_key)
-    if cached:
-        return cached
+    if cached is not None:
+        if isinstance(cached, pd.DataFrame):
+            if not cached.empty:
+                return cached
+        else:
+            return cached
 
     limit = CANDLES_BACK.get(interval_td, 300)
 
