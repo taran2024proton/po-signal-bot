@@ -857,9 +857,9 @@ def automatic_market_analysis(bot, chat_id, assets):
             
             try:
                 res = analyze(symbol, use_15m=True)  
-                if res and res.get("strength", 0) >= MIN_STRENGTH:
+                if res and isinstance(res, dict) and res.get("strength", 0) >= MIN_STRENGTH:
                     entry_time = next_m5_entry_time()
-                    trend = res["trend"].lower()
+                    trend = res.get("trend", "UNKNOWN").lower()
 
                     signal_key = f"{symbol}|{trend}|{entry_time}|{chat_id}"
 
@@ -877,8 +877,11 @@ def automatic_market_analysis(bot, chat_id, assets):
                     else:
                         trend_display = trend_raw
 
-                    df5 = fetch(symbol, "5m")
-                    expiry = get_smart_expiry(res, df5) 
+                    df5_data = fetch(symbol, "5m")
+                    if df5_data is not None and not (isinstance(df5_data, pd.DataFrame) and df5_data.empty):
+                        expiry = get_smart_expiry(res, df5_data)
+                    else:
+                        expiry = 3 # fallback
                         
                     message = (
                         f"🔥 <b>MARKET SIGNAL</b>\n"
@@ -904,10 +907,11 @@ def automatic_market_analysis(bot, chat_id, assets):
                     
                     LAST_SIGNAL_TIME[symbol] = now
                     
-                time.sleep(15)
+                time.sleep(20)
                 
             except Exception as e:
                 print(f"Error analyzing {symbol}: {e}")
+                time.sleep(5)
 
             index += 1
             
