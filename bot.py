@@ -1031,14 +1031,14 @@ def market_pair_selected(call):
         InlineKeyboardButton("🟰", callback_data=f"draw|{symbol}|{entry_time}"),
         InlineKeyboardButton("❌", callback_data=f"loss|{symbol}|{entry_time}")
     )
-
+    
     df5 = fetch(symbol, "5m")
-
+    
     if df5 is None:
         expiry = 3
     else:
         expiry = get_smart_expiry(res, df5)
-
+    
     bot.send_message(
         chat_id,
         f"🔥 <b>MARKET SIGNAL</b>\n"
